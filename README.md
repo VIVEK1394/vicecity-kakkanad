@@ -14,8 +14,10 @@ Built with Three.js (r128, vendored) and the native Web Audio API: **zero npm pa
 | :---: | :---: |
 | ![Kakkanad Junction from above at golden hour](assets/screenshots/kakkanad_junction_aerial.png) | ![Padamugal, Civil Line Road](assets/screenshots/padamugal_civil_line_road.png) |
 | *Kakkanad Junction at golden hour: Civil Station (left), Seaport-Airport Road heading north, the bus stand (right), the Metro Pink Line viaduct* | *Padamugal, Civil Line Road: shop rows with flex boards, metro piers on the widened median* |
+| ![People on Civil Line Road](assets/screenshots/kakkanad_people.png) | ![Kerala traffic at a signal](assets/screenshots/kerala_vehicles.png) |
+| *Chembumukku, Civil Line Road: a churidar with a dupatta, sarees, a mundu, shirts and trousers* | *Waiting at a signal on Seaport-Airport Road: Ambassador, auto rickshaw, Bullet, Kerala Police SUV and a Minnal bus* |
 | ![Driving down Seaport-Airport Road](assets/screenshots/seaport_airport_road_drive.png) | ![Kakkanad bus stand at night](assets/screenshots/bus_stand_night.png) |
-| *Driving the auto past Cochin SEZ on Seaport-Airport Road* | *Night by Kakkanad bus stand, with a yellow mission marker* |
+| *Driving the auto up Seaport-Airport Road at Chittethukara, under the Metro Pink Line* | *Night by Kakkanad bus stand, with a yellow mission marker* |
 | ![Thrikkakara Vamanamoorthy Temple](assets/screenshots/thrikkakara_temple.png) | ![Infopark Road](assets/screenshots/infopark_road.png) |
 | *Thrikkakara Temple: laterite wall, gopuram, copper-roofed shrine, gold flagstaff and temple pond* | *Morning on Infopark Road* |
 
