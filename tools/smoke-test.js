@@ -31,16 +31,17 @@ const TIERS = String(args.tiers || "medium").split(",");
 const SHOTS = args.shots ? path.resolve(String(args.shots)) : null;
 const TIMES = String(args.times || "08:45,12:00,18:30,22:00").split(",");
 
-// Same camera poses as the pre-upgrade baseline screenshots.
+// Camera poses on the real-Kakkanad map (+X east, -Z north; Kakkanad Junction = origin).
 const POSES = {
-  street: { p: [-58, 2.2, 245], t: [-110, 1.5, 0] },
-  junction: { p: [-40, 14, 215], t: [-70, 0, 160] },
-  infopark: { p: [430, 6, -250], t: [520, 30, -340] },
+  street: { p: [-160, 2.2, 36], t: [0, 3, 0] }, // Civil Line Road, looking east to Kakkanad Jn
+  junction: { p: [70, 42, 120], t: [-10, 0, 10] }, // Kakkanad Junction and Civil Station
+  infopark: { p: [1196, 5, 560], t: [1335, 26, 705] }, // Infopark Road, Thejomaya ahead
+  temple: { p: [-866, 24, -1206], t: [-929, 3, -1260] }, // Thrikkakara temple
 };
-// Same draw-call probe views as the baseline measurement (spawnView = game camera).
+// Draw-call probe views (spawnView = game camera).
 const PROBES = {
-  downSPAPRoad: { p: [-60, 3, 250], t: [-150, 1, -300] },
-  birdsEye: { p: [-70, 60, 260], t: [-70, 0, 160] },
+  downSPAPRoad: { p: [4, 3, 30], t: [-20, 1, 500] },
+  birdsEye: { p: [0, 60, 100], t: [0, 0, 0] },
 };
 
 function loadPlaywright() {
@@ -192,12 +193,22 @@ function runScenario() {
   // Free Roam was clicked with a real mouse before this runs.
   check("freeRoamClickDoesNotPunch", POL.wantedLevel === 0 && P.cash === 3500, { wanted: POL.wantedLevel, cash: P.cash });
 
-  // Park all traffic far away except one car kept for the carjack test.
+  // Freeze traffic: park one car in the kerb lane ahead of the spawn for the carjack
+  // test and hide the rest (traffic is unfrozen and checked at the end).
+  const G = g.mapManager.graph;
+  const spawn = P.spawn;
+  T.frozen = true;
   const jack = T.vehicles[0];
-  T.vehicles.forEach((v, i) => {
+  T.vehicles.forEach((v) => {
     v.speed = 0;
-    if (v === jack) v.position.set(-30, 0, 120);
-    else v.position.set(2000 + i * 25, 0, 2000);
+    v.parked = true;
+    v.nav = null;
+    if (v === jack) {
+      const lp = G.lanePoint(spawn.edge, 1, spawn.s + 30, G.laneOffset(spawn.edge, 0));
+      v.position.set(lp.x, 0, lp.z);
+      v.heading = lp.heading;
+      v.mesh.rotation.y = v.heading;
+    } else v.position.set(0, -500, 0);
     v.mesh.position.copy(v.position);
   });
 
@@ -328,13 +339,13 @@ function runScenario() {
   const cash1 = P.cash;
   M.startMission("mission_1");
   S.run(0.1);
-  const target = M.activeMission && M.activeMission.targetPos;
+  const target = M.activeMission && M.activeTarget;
   if (target) P.position.set(target.x, 0, target.z);
   S.run(0.2);
   check("missionComplete", !!target && M.activeMission === null && P.cash >= cash1 + 1500, { cashGain: P.cash - cash1 });
 
   // Police pursuit.
-  P.position.set(-70, 0, 160);
+  P.position.set(spawn.x, 0, spawn.z);
   POL.addCrimeHeat(130);
   S.run(0.1);
   const units = POL.policeUnits.filter((u) => u.isActive);
@@ -367,6 +378,84 @@ function runScenario() {
   let drawn = 0;
   for (let i = 3; i < px.length; i += 4) if (px[i] > 0) drawn++;
   check("hud", clock !== "08:45 AM" && drawn > 500, { clock, radarPixels: drawn });
+
+  // Buildings are solid: walk into the nearest building for 2 s.
+  {
+    P.position.set(spawn.x, 0, spawn.z);
+    let box = null;
+    let best = Infinity;
+    g.mapManager.colliders.forEach((b) => {
+      if (b.half.y < 2 || b.half.x < 3 || b.half.z < 3 || b.center.y - b.half.y > 1) return;
+      const d = Math.hypot(b.center.x - P.position.x, b.center.z - P.position.z);
+      if (d < best) {
+        best = d;
+        box = b;
+      }
+    });
+    const inside = (pos) => {
+      const c = Math.cos(box.rotY);
+      const sn = Math.sin(box.rotY);
+      const ox = pos.x - box.center.x;
+      const oz = pos.z - box.center.z;
+      return Math.abs(c * ox - sn * oz) < box.half.x - 0.05 && Math.abs(sn * ox + c * oz) < box.half.z - 0.05;
+    };
+    // stand 6 m in front of the box, then walk at it (camera behind the player)
+    const dx = box.center.x - P.position.x;
+    const dz = box.center.z - P.position.z;
+    const dl = Math.hypot(dx, dz);
+    const reach = Math.max(box.half.x, box.half.z) + 6;
+    P.position.set(box.center.x - (dx / dl) * reach, 0, box.center.z - (dz / dl) * reach);
+    P.heading = Math.atan2(dx, dz);
+    g.cameraRig.yaw = P.heading;
+    let entered = false;
+    S.key("KeyW", true);
+    for (let i = 0; i < 150; i++) {
+      S.run(1 / 60);
+      if (inside(P.position)) entered = true;
+    }
+    S.key("KeyW", false);
+    check("buildingCollision", !entered, { boxDist: +best.toFixed(1), pos: [+P.position.x.toFixed(1), +P.position.z.toFixed(1)] });
+  }
+
+  // Real names: locality + road on the HUD at Padamugal, Civil Line Road.
+  {
+    const e = G.edges.find((ed) => ed.road.id === "civil_line" && ed.len > 120);
+    const p = G.pointAt(e, e.len / 2);
+    P.position.set(p.x, 0, p.z);
+    S.run(0.5);
+    const loc = document.getElementById("current-location").textContent;
+    check("realPlaceNames", /CIVIL LINE ROAD/.test(loc) && /[A-Z]/.test(loc.split("·")[0] || ""), { location: loc });
+  }
+
+  // Traffic drives the lanes and pedestrians walk the sidewalks.
+  {
+    P.position.set(spawn.x, 0, spawn.z);
+    T.frozen = false;
+    T.vehicles.forEach((v) => {
+      if (v !== jack) {
+        v.parked = false;
+        v.nav = null;
+      }
+    });
+    S.run(0.2);
+    const start = new Map();
+    T.vehicles.forEach((v) => v.nav && start.set(v, v.position.clone()));
+    const peds0 = new Map();
+    T.pedestrians.forEach((q) => q.nav && !q.isKnockedOut && peds0.set(q, q.position.clone()));
+    S.run(4.0);
+    let moving = 0;
+    let onRoad = 0;
+    start.forEach((p0, v) => {
+      if (!v.nav) return;
+      if (v.position.distanceTo(p0) > 8) moving++;
+      const r = G.nearest(v.position.x, v.position.z, 60);
+      if (r && r.distance < r.edge.halfW + 1.5) onRoad++;
+    });
+    check("trafficDrives", start.size >= 10 && moving >= start.size * 0.6 && onRoad >= start.size * 0.9, { vehicles: start.size, moving, onRoad });
+    let walked = 0;
+    peds0.forEach((p0, q) => q.position.distanceTo(p0) > 1.5 && walked++);
+    check("pedestriansWalk", peds0.size >= 10 && walked >= peds0.size * 0.7, { peds: peds0.size, walked });
+  }
 
   check("noNaN", finite(P.position) && finite(g.camera.position) && Number.isFinite(P.heading), {});
   return results;
@@ -437,8 +526,13 @@ async function runTier(browser, port, tier) {
       const P = window.gameEngine.player;
       const v = P.starterVehicle;
       if (P.state === "IN_VEHICLE") S.tap("KeyF");
-      v.position.set(-120, 0, -20);
-      v.heading = Math.atan2(-200 - -120, -100 - -20) + 0.35;
+      // Seaport-Airport Road, leaving Kakkanad Junction southbound
+      const G = window.gameEngine.mapManager.graph;
+      const e = G.edges.find((ed) => ed.road.id === "sa_road" && (Math.hypot(ed.a.x, ed.a.z) < 1 || Math.hypot(ed.b.x, ed.b.z) < 1) && Math.max(ed.a.z, ed.b.z) > 100);
+      const dir = Math.hypot(e.a.x, e.a.z) < 1 ? 1 : -1;
+      const lp = G.lanePoint(e, dir, dir > 0 ? e.trimA + 20 : e.len - e.trimB - 20, G.laneOffset(e, 1));
+      v.position.set(lp.x, 0, lp.z);
+      v.heading = lp.heading;
       v.speed = 0;
       if (v.dynamics && v.dynamics.reset) v.dynamics.reset();
       v.mesh.position.copy(v.position);
@@ -447,8 +541,8 @@ async function runTier(browser, port, tier) {
       S.tap("KeyF");
       S.key("KeyW", true);
       S.run(2.5);
-      S.key("KeyA", true);
-      S.run(0.35);
+      S.key("KeyD", true);
+      S.run(0.25);
       S.render(3);
     });
     await page.screenshot({ path: path.join(SHOTS, `${tier}-driving.png`) });
@@ -459,7 +553,7 @@ async function runTier(browser, port, tier) {
     });
     await page.screenshot({ path: path.join(SHOTS, `${tier}-driving-night.png`) });
     await page.evaluate(() => {
-      window.__smoke.key("KeyA", false);
+      window.__smoke.key("KeyD", false);
       window.__smoke.key("KeyW", false);
       window.__smoke.setTime("08:45");
     });

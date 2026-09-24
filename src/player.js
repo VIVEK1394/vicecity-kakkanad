@@ -19,10 +19,12 @@ class PlayerController {
     this.state = "ON_FOOT";
     this.currentVehicle = null;
 
-    // Spatial State (Starts at Kakkanad Bus Stand)
-    this.position = new THREE.Vector3(-70, 0, 160);
+    // Spatial State: starts on the sidewalk by Kakkanad Bus Stand
+    const map = window.mapManager;
+    this.spawn = map ? map.spawnPoint() : { x: 0, z: 0, heading: 0 };
+    this.position = new THREE.Vector3(this.spawn.x, 0, this.spawn.z);
     this.velocity = new THREE.Vector3();
-    this.heading = 0; // Radians
+    this.heading = this.spawn.heading; // Radians
     this.speed = 0;   // Forward speed when driving
 
     // On-Foot Dynamics (see locomotion.js)
@@ -55,11 +57,23 @@ class PlayerController {
   }
 
   spawnStarterVehicle() {
-    // Parked ahead-left of the spawn point (still within the 6.8 m entry range) so the
-    // chase camera, which starts behind the player, never ends up inside the rickshaw.
+    // Parked at the kerb just ahead of the spawn point (within the 6.8 m entry range) so
+    // the chase camera, which starts behind the player, never ends up inside the rickshaw.
+    const map = window.mapManager;
+    let x = this.position.x + Math.sin(this.heading) * 4;
+    let z = this.position.z + Math.cos(this.heading) * 4;
+    let heading = this.heading;
+    if (map && this.spawn.edge) {
+      const g = map.graph;
+      const e = this.spawn.edge;
+      const p = g.lanePoint(e, 1, this.spawn.s + 3.5, e.halfW - 1.1);
+      x = p.x;
+      z = p.z;
+      heading = p.heading;
+    }
     const starterMesh = window.vehicleModelFactory.createAutoRickshawMesh();
-    starterMesh.position.set(-66.5, 0, 164.5);
-    starterMesh.rotation.y = 0.1;
+    starterMesh.position.set(x, 0, z);
+    starterMesh.rotation.y = heading;
     this.scene.add(starterMesh);
 
     this.starterVehicle = {
@@ -67,8 +81,8 @@ class PlayerController {
       type: "AUTO_RICKSHAW",
       archetype: this.config.VEHICLE_ARCHETYPES.AUTO_RICKSHAW,
       mesh: starterMesh,
-      position: new THREE.Vector3(-66.5, 0, 164.5),
-      heading: 0.1,
+      position: new THREE.Vector3(x, 0, z),
+      heading,
       speed: 0,
       steeringAngle: 0,
       isOccupied: false
@@ -170,6 +184,15 @@ class PlayerController {
     const rig = window.gameEngine && window.gameEngine.cameraRig;
     const cameraYaw = rig ? rig.yaw : this.heading;
     const speed = this.locomotion.update(delta, this.keys, cameraYaw);
+    // Buildings, walls, trees and pillars are solid.
+    const wall = mapManager.resolveCircle(this.position, 0.42);
+    if (wall) {
+      const vn = this.velocity.x * wall.x + this.velocity.z * wall.z;
+      if (vn < 0) {
+        this.velocity.x -= vn * wall.x;
+        this.velocity.z -= vn * wall.z;
+      }
+    }
     if (this.locomotion.landImpact > 0) this.gait.land(this.locomotion.landImpact);
     this.gait.update(delta, speed, this.locomotion.accelForward, this.locomotion.turnRate, this.isGrounded);
 
@@ -291,8 +314,10 @@ class PlayerController {
     this.position.copy(v.position).add(exitOffset);
     this.position.y = 0;
 
-    // The abandoned vehicle stays parked where it was left.
+    // The abandoned vehicle stays parked where it was left (traffic recycles it later).
     v.speed = 0;
+    v.parked = true;
+    v.nav = null;
     if (v.dynamics) v.dynamics.reset();
     v.aiMotion = null;
     v.suspension = null;
@@ -348,6 +373,8 @@ class PlayerController {
       surface
     );
 
+    this.collideVehicleWithCity(v, dyn, mapManager);
+
     // The player mirrors the vehicle (police, traffic, HUD read these).
     this.speed = v.speed;
     this.velocity.copy(v.velocity);
@@ -368,6 +395,47 @@ class PlayerController {
     const carSpeedEl = document.getElementById("car-speed");
     if (carSpeedEl) {
       carSpeedEl.textContent = Math.round(Math.abs(this.speed) * 3.6);
+    }
+  }
+
+  // Buildings stop the vehicle: two circles (nose and tail) are pushed out of every
+  // building box; the velocity into the wall is removed (a little bounce), a hard hit
+  // shakes the camera. Scraping along a wall keeps the tangential speed.
+  collideVehicleWithCity(v, dyn, mapManager) {
+    const a = v.archetype;
+    const fx = Math.sin(v.heading);
+    const fz = Math.cos(v.heading);
+    const r = a.width / 2 + 0.1;
+    const off = Math.max(0, a.length / 2 - r);
+    const c = this._circle || (this._circle = new THREE.Vector3());
+    let normal = null;
+    [off, -off].forEach((o) => {
+      c.set(v.position.x + fx * o, 0, v.position.z + fz * o);
+      const x0 = c.x;
+      const z0 = c.z;
+      const n = mapManager.resolveCircle(c, r);
+      if (!n) return;
+      v.position.x += c.x - x0;
+      v.position.z += c.z - z0;
+      normal = n.clone();
+    });
+    if (!normal) return;
+    const vel = v.velocity;
+    const vn = vel.x * normal.x + vel.z * normal.z;
+    if (vn >= 0) return;
+    const vx = vel.x - 1.25 * vn * normal.x;
+    const vz = vel.z - 1.25 * vn * normal.z;
+    dyn.u = vx * fx + vz * fz;
+    dyn.vl = vx * fz - vz * fx;
+    v.speed = dyn.u;
+    vel.set(vx, 0, vz);
+    if (-vn > 4) {
+      const now = performance.now();
+      if (!this.lastWallHit || now - this.lastWallHit > 400) {
+        this.lastWallHit = now;
+        this.soundEngine.playCrash(Math.min(1.2, -vn / 12));
+        if (window.gameEngine && window.gameEngine.cameraRig) window.gameEngine.cameraRig.addShake(Math.min(0.6, -vn / 20));
+      }
     }
   }
 
@@ -416,11 +484,12 @@ class PlayerController {
     this.health = 100;
     this.armor = 50;
     this.cash = Math.max(0, this.cash - 500);
-    this.position.set(-70, 0, 160);
-    if (this.state === "IN_VEHICLE") {
-      this.exitVehicle();
-      this.position.set(-70, 0, 160);
-    }
+    if (this.state === "IN_VEHICLE") this.exitVehicle();
+    // Sunrise Hospital (or Kusumagiri, whichever is nearer)
+    const map = window.mapManager;
+    const spot = map ? map.nearestLandmarkFront(["sunrise", "kusumagiri"], this.position) : null;
+    if (spot) this.position.set(spot.x, 0, spot.z);
+    else this.position.set(this.spawn.x, 0, this.spawn.z);
     this.velocity.set(0, 0, 0);
     this.characterMesh.position.copy(this.position);
     if (window.policeManager) window.policeManager.wantedLevel = 0;
