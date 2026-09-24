@@ -60,7 +60,17 @@ Built with Three.js (r128, vendored) and the native Web Audio API: **zero npm pa
   - per-tier draw distance and night-only light cones;
   - vehicles drop wheel and driver detail beyond 65 m;
   - dynamic resolution.
-  - The dense city renders in about 250 main and 80 shadow draw calls at street level.
+  - The dense city renders in about 270 main and 90 shadow draw calls at street level, people and traffic included.
+
+### Vehicles and people
+- **Vehicles** are modelled from side profiles with real proportions: wheel-arch cut-outs, rounded bevelled bodies, a narrower glasshouse with tinted glass, chrome and black trim, round or square lamps, Kerala number plates, lathe-turned tyres and rims (alloy, steel, hubcaps, wire spokes).
+  - **Auto rickshaw**: green tub, yellow canvas hood, single front wheel with a mudguard, commercial (yellow) plates.
+  - **Minnal private bus**: painted livery with its name and route, glowing route board, doors on the kerb side, roof rails.
+  - **Kerala Police SUV** with POLICE door panels, a light bar and a bull bar; the domed **Ambassador** with its chrome grille; the **Bullet 350** with a teardrop tank and a long exhaust; a wedge sports car.
+- **People** have sculpted heads (skull, brow, cheekbones, jaw, chin), a modelled nose and ears, and painted faces in real proportions: eyes with irises, brows, lips, Kerala moustaches and beards, bindis, kajal and sandal paste.
+  - Men wear shirts (collar, buttons, pocket) or T-shirts with a lungi, a mundu with a gold kasavu border, or trousers.
+  - Women wear sarees (some in the cream-and-gold Kerala set-saree) with the pallu over the shoulder, or a churidar with a dupatta. They have braids or a bun with jasmine, jhumkas and bangles.
+  - The player wears an open-necked Hawaiian shirt with a gold chain.
 
 ### Motion
 - **Camera**: GTA V-style third person.
@@ -189,7 +199,7 @@ vicecity-kakkanad/
     ├── postprocessing.js   # HDR pipeline: SSAO, bloom, motion blur, SSR, ACES, FXAA
     ├── surfaces.js         # Procedural PBR surfaces (asphalt, pavers, curbs, ground, water, facades)
     ├── foliage.js          # Coconut palms and banana plants with wind sway
-    ├── models.js           # Vehicles (sprung body, palette material, lights), jointed character rigs
+    ├── models.js           # Vehicles (profile bodies, sprung body, palette material, lights), people (parametric heads, painted faces, rigs)
     ├── citygen.js          # Kerala building kit: facades, tiles, signs, boards, building types
     ├── map.js              # Roads, junctions, rivers, metro, landmarks, generated city, palms, collisions
     ├── vehicle-physics.js  # Tyre-model vehicle dynamics and suspension visuals

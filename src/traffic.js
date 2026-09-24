@@ -362,7 +362,7 @@ class TrafficManager {
     const cols = [0xe63946, 0x457b9d, 0x2a9d8f, 0xe76f51, 0xf4a261, 0x9d4edd, 0x3a86ff, 0xffbe0b, 0x8ac926];
     for (let i = 0; i < this.maxPedestrians; i++) {
       const lungi = i % 2 === 0;
-      const group = window.vehicleModelFactory.createPedestrianMesh(cols[i % cols.length], lungi ? 0xeeeee6 : [0x1d3557, 0x3d405b, 0x6b705c][i % 3], lungi);
+      const group = window.vehicleModelFactory.createPedestrianMesh(cols[i % cols.length], lungi ? 0xeeeee6 : [0x1d3557, 0x3d405b, 0x6b705c][i % 3], lungi, i * 7919 + 13);
       TrafficManager.trimShadowCasters(group);
       this.scene.add(group);
       const ped = {

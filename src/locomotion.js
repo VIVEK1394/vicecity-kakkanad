@@ -258,7 +258,7 @@ class PedestrianGait {
     this.phase = (this.phase + (speed / cycle) * Math.PI * 2 * dt) % (Math.PI * 2);
     const s = Math.sin(this.phase);
     const run = gaitSmooth(2.2, 5.0, speed);
-    const legAmp = 0.45 + 0.3 * run;
+    const legAmp = (0.45 + 0.3 * run) * (r.skirt ? 0.6 : 1); // shorter steps in a saree or mundu
     r.legL.rotation.x = -s * legAmp;
     r.legR.rotation.x = s * legAmp;
     r.armL.rotation.x = s * (0.35 + 0.4 * run);
