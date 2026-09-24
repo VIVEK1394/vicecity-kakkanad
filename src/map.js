@@ -1,7 +1,11 @@
 /**
  * GTA: VICE CITY KAKKANAD (ഗ്രാൻഡ് തെഫ്റ്റ് ഓട്ടോ: കാക്കനാട്)
- * DOMAIN 2: KAKKANAD 3D MAP (VICE CITY NEON GRAPHICS UPGRADE)
- * Features retro 1980s neon storefronts, zebra crossings, and sunset lighting.
+ * DOMAIN 2: KAKKANAD 3D MAP
+ * OpenStreetMap-derived road network with mitered asphalt, lane markings, zebra
+ * crossings, interlock sidewalks, hazard-striped curbs and medians, street lamps,
+ * PBR building facades with night-lit windows, landmarks and thattukadas.
+ * All static geometry is merged by StaticBatcher (one draw call per material per cell).
+ * Also exposes camera colliders (buildings) and street-lamp positions.
  */
 
 class KakkanadMapManager {
@@ -11,60 +15,104 @@ class KakkanadMapManager {
     this.roads = this.config.ROAD_NETWORK;
     this.landmarks = this.config.KEY_LANDMARKS;
 
-    // Surface Materials Engine Integration
-    if (typeof window.SurfaceManager !== "undefined") {
-      this.surfaceManager = new window.SurfaceManager();
-      this.asphaltMat = this.surfaceManager.asphaltMaterial;
-      this.curbMat = this.surfaceManager.curbMaterial;
-      this.medianMat = this.surfaceManager.medianGrassMaterial;
-    } else {
-      this.asphaltMat = new THREE.MeshStandardMaterial({ color: 0x181a20, roughness: 0.5, metalness: 0.25 });
-      this.curbMat = new THREE.MeshStandardMaterial({ color: 0x2ec4b6, roughness: 0.6 });
-      this.medianMat = new THREE.MeshStandardMaterial({ color: 0x1f3823, roughness: 0.8 });
-    }
-    this.waterMat = new THREE.MeshStandardMaterial({ color: 0x0077b6, roughness: 0.1, metalness: 0.85 });
-    this.glassBuildingMat = new THREE.MeshStandardMaterial({ color: 0x0a192f, roughness: 0.15, metalness: 0.9 });
-    this.concreteMat = new THREE.MeshStandardMaterial({ color: 0xadb5bd, roughness: 0.7 });
-    this.thattukadaRoofMat = new THREE.MeshStandardMaterial({ color: 0x9e2a2b, roughness: 0.6 });
-    this.palmTrunkMat = new THREE.MeshStandardMaterial({ color: 0x3d2b1f, roughness: 0.9 });
-    this.palmLeafMat = new THREE.MeshStandardMaterial({ color: 0x2d6a4f, roughness: 0.7 });
+    this.surfaceManager = new window.SurfaceManager();
+    this.batcher = new window.StaticBatcher(scene, 600);
 
-    // Neon Glow Materials
-    this.neonPinkMat = new THREE.MeshBasicMaterial({ color: 0xff007f });
-    this.neonCyanMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff });
-    this.neonGoldMat = new THREE.MeshBasicMaterial({ color: 0xffb703 });
-    this.neonPurpleMat = new THREE.MeshBasicMaterial({ color: 0xb5179e });
-    this.roadStripeWhite = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    this.roadStripeYellow = new THREE.MeshBasicMaterial({ color: 0xffd166 });
+    this.roadMeshes = []; // {roadId, p1, p2, width} per segment, used by getNearestRoadPoint
+    this.colliders = []; // camera collision boxes: {center, half, rotY}
+    this.streetLamps = []; // lamp head world positions
+    this.junctions = [];
 
-    this.roadMeshes = [];
+    const S = this.surfaceManager;
+    this.darkMetalMat = new THREE.MeshStandardMaterial({ color: 0x2a2c30, roughness: 0.5, metalness: 0.8 });
+    this.lampHousingMat = new THREE.MeshStandardMaterial({ color: 0x3a3d42, roughness: 0.4, metalness: 0.9 });
+    this.lampLensMat = new THREE.MeshBasicMaterial({ color: 0xffe2b0 });
+    this.lampLensMat.userData.glow = { day: 0.35, night: 9.0 };
+    this.lampConeMat = new THREE.MeshBasicMaterial({
+      color: 0xffcf8a,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    this.lampConeMat.userData.glow = { day: 0, night: 0.05 };
+    this.lampPoolMat = new THREE.MeshBasicMaterial({
+      map: S.lightPoolTexture,
+      color: 0xffc98a,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -4,
+      polygonOffsetUnits: -80,
+    });
+    this.lampPoolMat.userData.glow = { day: 0, night: 0.55 };
+    this.woodMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2b, roughness: 0.85 });
+    this.tileRoofMat = new THREE.MeshStandardMaterial({ color: 0x8e3a2a, roughness: 0.78 });
+    this.sheetRoofMat = new THREE.MeshStandardMaterial({ color: 0x8a2f2c, roughness: 0.5, metalness: 0.6 });
+    this.whitePaintMat = new THREE.MeshStandardMaterial({ color: 0xe8e8e2, roughness: 0.45, metalness: 0.2 });
+    this.neonMats = new Map();
+
     this.initMap();
   }
 
+  neon(hex, day = 0.35, night = 4.0) {
+    const key = `${hex}|${day}|${night}`;
+    if (!this.neonMats.has(key)) {
+      const m = new THREE.MeshBasicMaterial({ color: hex });
+      m.userData.glow = { day, night };
+      this.neonMats.set(key, m);
+    }
+    return this.neonMats.get(key);
+  }
+
   initMap() {
+    this.analyseJunctions();
     this.buildTerrainGround();
     this.buildRiver();
     this.buildRoadNetwork();
-    this.buildViceCityNeonBuildings();
+    this.buildBuildings();
     this.buildLandmarks();
     this.buildThattukadas();
     this.buildPalmTrees();
+    this.batchStats = this.batcher.build();
   }
 
+  update(delta) {
+    this.surfaceManager.updateWater(delta);
+  }
+
+  addCollider(x, y, z, hx, hy, hz, rotY = 0) {
+    this.colliders.push({ center: new THREE.Vector3(x, y, z), half: new THREE.Vector3(hx, hy, hz), rotY });
+  }
+
+  // --- 1. Ground & River ---------------------------------------------------------------
   buildTerrainGround() {
     const bounds = this.config.MAP_BOUNDS;
     const width = bounds.maxX - bounds.minX;
     const depth = bounds.maxZ - bounds.minZ;
+    const geo = new THREE.PlaneGeometry(width, depth, 64, 64);
+    geo.rotateX(-Math.PI / 2);
 
-    const groundGeo = new THREE.PlaneGeometry(width, depth);
-    groundGeo.rotateX(-Math.PI / 2);
+    // World-unit UVs (16 m texture tile) + low-frequency vertex tint to hide tiling.
+    const pos = geo.attributes.position;
+    const uv = geo.attributes.uv;
+    const colors = new Float32Array(pos.count * 3);
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const z = pos.getZ(i);
+      uv.setXY(i, x / 16, z / 16);
+      const n = GFX.fbm(x + 5000, z + 5000, 10000, 24, 3, 3);
+      const dry = GFX.fbm(x + 5000, z + 5000, 10000, 9, 2, 8);
+      const k = 0.78 + 0.34 * n;
+      const c = new THREE.Color(k * (1 + 0.12 * dry), k, k * (1 - 0.1 * dry)).convertSRGBToLinear();
+      colors[i * 3] = c.r;
+      colors[i * 3 + 1] = c.g;
+      colors[i * 3 + 2] = c.b;
+    }
+    geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
 
-    const groundMat = new THREE.MeshStandardMaterial({
-      color: 0x0e1713,
-      roughness: 0.9
-    });
-
-    const ground = new THREE.Mesh(groundGeo, groundMat);
+    const ground = new THREE.Mesh(geo, this.surfaceManager.groundMaterial);
     ground.position.set(0, -0.05, 0);
     ground.receiveShadow = true;
     this.scene.add(ground);
@@ -73,436 +121,466 @@ class KakkanadMapManager {
   buildRiver() {
     const riverGeo = new THREE.PlaneGeometry(400, 2400);
     riverGeo.rotateX(-Math.PI / 2);
-    const river = new THREE.Mesh(riverGeo, this.waterMat);
+    const pos = riverGeo.attributes.position;
+    for (let i = 0; i < pos.count; i++) riverGeo.attributes.uv.setXY(i, pos.getX(i) / 10, pos.getZ(i) / 10);
+    const river = new THREE.Mesh(riverGeo, this.surfaceManager.waterMaterial);
     river.position.set(1100, 0.05, 0);
+    river.receiveShadow = true;
     this.scene.add(river);
 
-    // River Bridge
-    const bridgeGeo = new THREE.BoxGeometry(220, 1.2, 22);
-    const bridge = new THREE.Mesh(bridgeGeo, this.concreteMat);
+    const bridge = new THREE.Mesh(this.surfaceManager.box(220, 1.2, 22, 4, 1.2), this.surfaceManager.concreteMaterial);
     bridge.position.set(980, 1.8, -520);
-    this.scene.add(bridge);
+    bridge.castShadow = true;
+    bridge.receiveShadow = true;
+    this.batcher.add(bridge);
+    this.addCollider(980, 1.8, -520, 110, 0.6, 11);
+  }
+
+  // --- 2. Road network ---------------------------------------------------------------
+  analyseJunctions() {
+    const roadsAt = new Map();
+    this.roads.forEach((road) => {
+      road.points.forEach((p) => {
+        const key = `${p.x},${p.z}`;
+        const list = roadsAt.get(key) || [];
+        if (!list.includes(road)) list.push(road);
+        roadsAt.set(key, list);
+      });
+    });
+    roadsAt.forEach((list, key) => {
+      if (list.length < 2) return;
+      const [x, z] = key.split(",").map(Number);
+      this.junctions.push({ x, z, trim: Math.max(...list.map((r) => r.width / 2)) + 4 });
+    });
+  }
+
+  junctionTrim(p) {
+    const j = this.junctions.find((jn) => Math.abs(jn.x - p.x) < 0.01 && Math.abs(jn.z - p.z) < 0.01);
+    return j ? j.trim : 0;
+  }
+
+  // Flat quad (y up) from 4 corners [start-left, start-right, end-left, end-right].
+  quad(c, uvs, y) {
+    const g = new THREE.BufferGeometry();
+    const p = [];
+    c.forEach((v) => p.push(v.x, y, v.z));
+    g.setAttribute("position", new THREE.Float32BufferAttribute(p, 3));
+    g.setAttribute("normal", new THREE.Float32BufferAttribute([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0], 3));
+    g.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+    // wind counter-clockwise seen from above
+    const ab = new THREE.Vector3().subVectors(c[1], c[0]);
+    const ac = new THREE.Vector3().subVectors(c[2], c[0]);
+    const up = ab.z * ac.x - ab.x * ac.z > 0;
+    g.setIndex(up ? [0, 1, 2, 1, 3, 2] : [0, 2, 1, 1, 2, 3]);
+    return g;
+  }
+
+  addQuad(corners, uvs, y, material, receiveShadow = true) {
+    const mesh = new THREE.Mesh(this.quad(corners, uvs, y), material);
+    mesh.receiveShadow = receiveShadow;
+    this.batcher.add(mesh);
+  }
+
+  // Straight strip between along-positions s0..s1 and lateral offsets w0..w1 on one
+  // segment (UVs in metres; used for untextured road paint).
+  addStrip(a, dir, nrm, s0, s1, w0, w1, y, material) {
+    const p = (s, w) => new THREE.Vector3(a.x + dir.x * s + nrm.x * w, 0, a.z + dir.z * s + nrm.z * w);
+    this.addQuad([p(s0, w0), p(s0, w1), p(s1, w0), p(s1, w1)], [s0, w0, s0, w1, s1, w0, s1, w1], y, material);
   }
 
   buildRoadNetwork() {
-    this.roads.forEach((road) => {
-      const pts = road.points;
+    const S = this.surfaceManager;
+    this.roads.forEach((road, roadIndex) => {
+      const pts = road.points.map((p) => new THREE.Vector3(p.x, 0, p.z));
+      const n = pts.length;
       const halfW = road.width / 2;
+      const dirs = [];
+      for (let i = 0; i < n - 1; i++) dirs.push(new THREE.Vector3().subVectors(pts[i + 1], pts[i]).normalize());
 
-      for (let i = 0; i < pts.length - 1; i++) {
-        const p1 = new THREE.Vector3(pts[i].x, 0.08, pts[i].z);
-        const p2 = new THREE.Vector3(pts[i + 1].x, 0.08, pts[i + 1].z);
+      // Mitered vertex normals so consecutive segments share edges (no gaps/overlaps).
+      const normals = [];
+      const miter = [];
+      for (let i = 0; i < n; i++) {
+        const t = i === 0 ? dirs[0].clone() : i === n - 1 ? dirs[n - 2].clone() : dirs[i - 1].clone().add(dirs[i]).normalize();
+        const nv = new THREE.Vector3(-t.z, 0, t.x);
+        const ref = dirs[Math.min(i, n - 2)];
+        miter.push(1 / Math.max(0.35, nv.dot(new THREE.Vector3(-ref.z, 0, ref.x))));
+        normals.push(nv);
+      }
 
-        const dir = new THREE.Vector3().subVectors(p2, p1);
-        const len = dir.length();
-        dir.normalize();
+      let along = 0;
+      for (let i = 0; i < n - 1; i++) {
+        const a = pts[i];
+        const b = pts[i + 1];
+        const dir = dirs[i];
+        const len = a.distanceTo(b);
+        const nrm = new THREE.Vector3(-dir.z, 0, dir.x);
+        const off = (k, w) => new THREE.Vector3().copy(pts[k]).addScaledVector(normals[k], w * miter[k]);
 
-        const normal = new THREE.Vector3(-dir.z, 0, dir.x).normalize();
+        // Asphalt (8 m texture tile, continuous v along the whole road).
+        this.addQuad(
+          [off(i, halfW), off(i, -halfW), off(i + 1, halfW), off(i + 1, -halfW)],
+          [0, along / 8, road.width / 8, along / 8, 0, (along + len) / 8, road.width / 8, (along + len) / 8],
+          0.08,
+          S.asphaltFor(roadIndex)
+        );
+        this.roadMeshes.push({
+          roadId: road.id,
+          p1: new THREE.Vector3(a.x, 0.08, a.z),
+          p2: new THREE.Vector3(b.x, 0.08, b.z),
+          width: road.width,
+        });
 
-        // Asphalt Road Surface
-        const roadGeo = new THREE.BufferGeometry();
-        const v = [];
-        const idx = [];
-
-        const c1 = new THREE.Vector3().copy(p1).addScaledVector(normal, -halfW);
-        const c2 = new THREE.Vector3().copy(p1).addScaledVector(normal, halfW);
-        const c3 = new THREE.Vector3().copy(p2).addScaledVector(normal, -halfW);
-        const c4 = new THREE.Vector3().copy(p2).addScaledVector(normal, halfW);
-
-        v.push(c1.x, c1.y, c1.z);
-        v.push(c2.x, c2.y, c2.z);
-        v.push(c3.x, c3.y, c3.z);
-        v.push(c4.x, c4.y, c4.z);
-
-        idx.push(0, 1, 2);
-        idx.push(1, 3, 2);
-
-        roadGeo.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
-        roadGeo.setIndex(idx);
-        roadGeo.computeVertexNormals();
-
-        const mesh = new THREE.Mesh(roadGeo, this.asphaltMat);
-        mesh.receiveShadow = true;
-        this.scene.add(mesh);
-        this.roadMeshes.push({ roadId: road.id, p1, p2, width: road.width });
-
-        // Yellow Road Markings & White Dashes
-        this.addRoadMarkings(p1, p2, dir, normal, len, road.isDualCarriageway);
-
-        // Center Median / Curbs for Dual Carriageways
-        if (road.isDualCarriageway) {
-          const medGeo = new THREE.BoxGeometry(1.4, 0.35, len);
-          const medMesh = new THREE.Mesh(medGeo, this.medianMat);
-          const midPos = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
-          medMesh.position.set(midPos.x, 0.2, midPos.z);
-          medMesh.rotation.y = Math.atan2(dir.x, dir.z);
-          this.scene.add(medMesh);
-
-          // Streetlights along outer curbs
-          if (len > 70) {
-            this.addStreetlight(
-              midPos.x + normal.x * (road.width * 0.5 + 2.5),
-              midPos.z + normal.z * (road.width * 0.5 + 2.5),
-              Math.atan2(normal.x, normal.z)
-            );
-          }
+        const trimA = this.junctionTrim(a);
+        const trimB = this.junctionTrim(b);
+        const s0 = trimA;
+        const s1 = len - trimB;
+        if (s1 - s0 > 4) {
+          this.addRoadMarkings(road, a, dir, nrm, len, s0, s1, trimA > 0, trimB > 0);
+          this.addSidewalks(road, i, a, dir, nrm, len, s0, s1, off, trimA > 0, trimB > 0);
+          if (road.isDualCarriageway) this.addMedian(a, dir, s0, s1);
+          this.addStreetLights(road, roadIndex, i, a, dir, nrm, s0, s1);
         }
+        along += len;
       }
     });
   }
 
-  addRoadMarkings(p1, p2, dir, normal, len, isDual) {
-    const steps = Math.floor(len / 8);
-    for (let s = 0; s < steps; s++) {
-      const t = (s + 0.5) / steps;
-      const pos = new THREE.Vector3().copy(p1).addScaledVector(dir, t * len);
-
-      // Center divider dash
-      const dashGeo = new THREE.BoxGeometry(0.2, 0.02, 3.5);
-      const dash = new THREE.Mesh(dashGeo, isDual ? this.roadStripeYellow : this.roadStripeWhite);
-      dash.position.set(pos.x, 0.1, pos.z);
-      dash.rotation.y = Math.atan2(dir.x, dir.z);
-      this.scene.add(dash);
-    }
-
-    // Zebra Crossings at junctions
-    if (len > 60) {
-      const crossPos = new THREE.Vector3().copy(p1).addScaledVector(dir, 8.0);
-      for (let z = -4; z <= 4; z += 1.5) {
-        const barGeo = new THREE.BoxGeometry(0.8, 0.02, 4.0);
-        const bar = new THREE.Mesh(barGeo, this.roadStripeWhite);
-        const zPos = new THREE.Vector3().copy(crossPos).addScaledVector(normal, z);
-        bar.position.set(zPos.x, 0.1, zPos.z);
-        bar.rotation.y = Math.atan2(dir.x, dir.z);
-        this.scene.add(bar);
+  addRoadMarkings(road, a, dir, nrm, len, s0, s1, junctionA, junctionB) {
+    const S = this.surfaceManager;
+    const halfW = road.width / 2;
+    const y = 0.085;
+    const dashes = (lateral, material) => {
+      for (let s = s0 + 2; s + 3 <= s1; s += 9) this.addStrip(a, dir, nrm, s, s + 3, lateral - 0.075, lateral + 0.075, y, material);
+    };
+    const solid = (lateral, width, material) => {
+      for (let s = s0; s < s1; s += 50) {
+        this.addStrip(a, dir, nrm, s, Math.min(s1, s + 50), lateral - width / 2, lateral + width / 2, y, material);
       }
+    };
+
+    if (road.isDualCarriageway) {
+      const laneLine = 0.7 + (halfW - 0.7) / 2;
+      dashes(laneLine, S.markingWhite);
+      dashes(-laneLine, S.markingWhite);
+      solid(0.95, 0.12, S.markingYellow);
+      solid(-0.95, 0.12, S.markingYellow);
+    } else {
+      dashes(0, S.markingWhite);
+    }
+    solid(halfW - 0.45, 0.15, S.markingWhite);
+    solid(-(halfW - 0.45), 0.15, S.markingWhite);
+
+    // Zebra crossings just outside each junction.
+    const zebra = (s) => {
+      for (let w = -halfW + 0.8; w <= halfW - 0.8; w += 1.0) {
+        if (road.isDualCarriageway && Math.abs(w) < 1.1) continue;
+        this.addStrip(a, dir, nrm, s, s + 3.2, w - 0.25, w + 0.25, y, S.markingWhite);
+      }
+    };
+    if (junctionA) zebra(s0 + 1.5);
+    if (junctionB && len > 30) zebra(s1 - 4.7);
+  }
+
+  addSidewalks(road, i, a, dir, nrm, len, s0, s1, off, junctionA, junctionB) {
+    const S = this.surfaceManager;
+    const halfW = road.width / 2;
+    // Corner points: mitered at shared (non-junction) vertices, perpendicular where trimmed.
+    const corner = (end, w) => {
+      if (end === 0 && !junctionA) return off(i, w);
+      if (end === 1 && !junctionB) return off(i + 1, w);
+      const s = end === 0 ? s0 : s1;
+      return new THREE.Vector3(a.x + dir.x * s + nrm.x * w, 0, a.z + dir.z * s + nrm.z * w);
+    };
+    [1, -1].forEach((side) => {
+      const band = (w0, w1, y, material, uTile, vTile) => {
+        const c = [corner(0, side * w0), corner(0, side * w1), corner(1, side * w0), corner(1, side * w1)];
+        const uv = [s0 / uTile, 0, s0 / uTile, (w1 - w0) / vTile, s1 / uTile, 0, s1 / uTile, (w1 - w0) / vTile];
+        this.addQuad(c, uv, y, material);
+      };
+      band(halfW, halfW + 0.35, 0.078, S.curbMaterial, 2.4, 0.35);
+      band(halfW + 0.35, halfW + 3.4, 0.075, S.sidewalkMaterial, 4, 4);
+    });
+  }
+
+  addMedian(a, dir, s0, s1) {
+    const S = this.surfaceManager;
+    const len = s1 - s0;
+    const geo = S.box(1.4, 0.3, len, 2.4, 0.3);
+    const median = new THREE.Mesh(geo, [
+      S.medianSideMaterial,
+      S.medianSideMaterial,
+      S.medianGrassMaterial,
+      S.medianSideMaterial,
+      S.medianSideMaterial,
+      S.medianSideMaterial,
+    ]);
+    const mid = (s0 + s1) / 2;
+    median.position.set(a.x + dir.x * mid, 0.15, a.z + dir.z * mid);
+    median.rotation.y = Math.atan2(dir.x, dir.z);
+    median.receiveShadow = true;
+    this.batcher.add(median);
+  }
+
+  addStreetLights(road, roadIndex, segIndex, a, dir, nrm, s0, s1) {
+    const halfW = road.width / 2;
+    let k = roadIndex + segIndex;
+    for (let s = s0 + 8; s <= s1 - 6; s += 45, k++) {
+      const side = k % 2 === 0 ? 1 : -1;
+      const lateral = side * (halfW + 1.2);
+      const x = a.x + dir.x * s + nrm.x * lateral;
+      const z = a.z + dir.z * s + nrm.z * lateral;
+      // lamp arm points back over the road
+      const facing = Math.atan2(-nrm.x * side, -nrm.z * side);
+      this.addStreetlight(x, z, facing);
     }
   }
 
-  addStreetlight(x, z, angle = 0) {
+  addStreetlight(x, z, angle) {
+    const S = this.surfaceManager;
     const group = new THREE.Group();
-    const steelMat = new THREE.MeshStandardMaterial({ color: 0x1f2421, roughness: 0.6, metalness: 0.8 });
 
-    // Dark graphite metallic pole
-    const poleGeo = new THREE.CylinderGeometry(0.10, 0.15, 9.2, 8);
-    const pole = new THREE.Mesh(poleGeo, steelMat);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.14, 9.2, 8), S.steelMaterial);
     pole.position.y = 4.6;
+    pole.castShadow = true;
     group.add(pole);
 
-    // Cantilever arm arching over roadway
-    const armGeo = new THREE.BoxGeometry(0.08, 0.08, 2.2);
-    const arm = new THREE.Mesh(armGeo, steelMat);
-    arm.position.set(0, 9.1, -1.0);
-    arm.rotation.x = -0.12;
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 2.2), S.steelMaterial);
+    arm.position.set(0, 9.1, 1.0);
+    arm.rotation.x = 0.12;
     group.add(arm);
 
-    // High-Pressure Sodium Streetlamp Fixture
-    const lampGeo = new THREE.BoxGeometry(0.4, 0.18, 0.7);
-    const lampMat = new THREE.MeshBasicMaterial({ color: 0xffe6a7 });
-    const lamp = new THREE.Mesh(lampGeo, lampMat);
-    lamp.position.set(0, 9.0, -1.9);
-    group.add(lamp);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.16, 0.75), this.lampHousingMat);
+    head.position.set(0, 9.0, 1.95);
+    group.add(head);
 
-    // Atmospheric warm downward light cone
-    const glowGeo = new THREE.ConeGeometry(2.4, 7.5, 8, 1, true);
-    const glowMat = new THREE.MeshBasicMaterial({
-      color: 0xffc300,
-      transparent: true,
-      opacity: 0.06,
-      side: THREE.DoubleSide
-    });
-    const glow = new THREE.Mesh(glowGeo, glowMat);
-    glow.position.set(0, 4.8, -1.9);
-    group.add(glow);
+    const lens = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.03, 0.62), this.lampLensMat);
+    lens.position.set(0, 8.91, 1.95);
+    group.add(lens);
+
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(2.6, 8.2, 10, 1, true), this.lampConeMat);
+    cone.position.set(0, 4.8, 1.95);
+    group.add(cone);
+
+    const pool = new THREE.Mesh(new THREE.PlaneGeometry(14, 14), this.lampPoolMat);
+    pool.rotation.x = -Math.PI / 2;
+    pool.position.set(0, 0.1, 1.95);
+    group.add(pool);
 
     group.position.set(x, 0, z);
     group.rotation.y = angle;
-    this.scene.add(group);
+    group.updateMatrixWorld(true);
+    this.streetLamps.push(new THREE.Vector3(0, 8.9, 1.95).applyMatrix4(group.matrixWorld));
+    this.batcher.add(group);
   }
 
   createNeonSignTexture(text, textColor = "#ff007f", glowColor = "#ff77a9") {
-    const canvas = document.createElement("canvas");
-    canvas.width = 512;
-    canvas.height = 128;
+    const canvas = GFX.makeCanvas(512, 128);
     const ctx = canvas.getContext("2d");
-
-    // Dark glass backing
-    ctx.fillStyle = "#080b14";
+    ctx.fillStyle = "#07090e";
     ctx.fillRect(0, 0, 512, 128);
-
-    // Glowing border frame
     ctx.strokeStyle = textColor;
-    ctx.lineWidth = 6;
+    ctx.lineWidth = 5;
     ctx.strokeRect(8, 8, 496, 112);
-
-    // Neon Text with double shadow glow
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.font = "bold 38px 'Orbitron', 'Rajdhani', sans-serif";
-
     ctx.shadowColor = glowColor;
-    ctx.shadowBlur = 18;
+    ctx.shadowBlur = 14;
     ctx.fillStyle = textColor;
     ctx.fillText(text, 256, 64);
-
-    // Second inner pass for white hot tube center
-    ctx.shadowBlur = 4;
+    ctx.shadowBlur = 3;
     ctx.fillStyle = "#ffffff";
     ctx.fillText(text, 256, 64);
-
-    const tex = new THREE.CanvasTexture(canvas);
-    return tex;
+    return GFX.texture(canvas);
   }
 
-  // Procedural Window Grid Texture
-  createBuildingWindowTexture(baseColor = "#f8edeb", windowColor = "#ffe66d") {
-    const canvas = document.createElement("canvas");
-    canvas.width = 256;
-    canvas.height = 256;
-    const ctx = canvas.getContext("2d");
-
-    ctx.fillStyle = baseColor;
-    ctx.fillRect(0, 0, 256, 256);
-
-    // Draw grid of warm glowing windows
-    ctx.fillStyle = windowColor;
-    for (let y = 14; y < 240; y += 38) {
-      for (let x = 16; x < 240; x += 42) {
-        ctx.fillRect(x, y, 26, 22);
-      }
-    }
-
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.wrapS = THREE.RepeatWrapping;
-    tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(2, 4);
-    return tex;
+  signBoard(width, text, col, glow) {
+    const signMat = new THREE.MeshBasicMaterial({ map: this.createNeonSignTexture(text, col, glow) });
+    signMat.userData.glow = { day: 1.0, night: 2.6 };
+    const d = this.darkMetalMat;
+    return new THREE.Mesh(new THREE.BoxGeometry(width, 5.5, 0.6), [d, d, d, d, signMat, d]);
   }
 
-  // --- 4. Vice City Neon Architecture & Billboards ---
-  buildViceCityNeonBuildings() {
-    const buildingSpots = [
-      { x: -95,  z: 145, w: 32, h: 36, d: 24, title: "HOTEL MALABAR ★", col: "#ff007f", glow: "#ff77aa", baseCol: "#ff8fa3", winCol: "#fff3b0" },
-      { x: -95,  z: 185, w: 28, h: 42, d: 26, title: "OCEAN DRIVE CAFE 🌴", col: "#00f0ff", glow: "#70f5ff", baseCol: "#48cae4", winCol: "#caf0f8" },
-      { x: -40,  z: 130, w: 34, h: 48, d: 28, title: "VICE CITY KAKKANAD", col: "#ff007f", glow: "#ff77aa", baseCol: "#fce7f3", winCol: "#ffd166" },
-      { x: 120,  z: 180, w: 40, h: 60, d: 30, title: "KOCHI SYNTH LOUNGE 🍸", col: "#b5179e", glow: "#e056fd", baseCol: "#7209b7", winCol: "#f72585" },
-      { x: 260,  z: 60,  w: 45, h: 70, d: 35, title: "INFOPARK BOULEVARD", col: "#00f0ff", glow: "#70f5ff", baseCol: "#1e293b", winCol: "#38bdf8" },
-      { x: 420,  z: 220, w: 35, h: 50, d: 30, title: "EDACHIRA PLAZA ★", col: "#ffd166", glow: "#ffe49e", baseCol: "#ffbe0b", winCol: "#fffae0" }
+  // --- 3. Buildings ---------------------------------------------------------------------
+  buildBuildings() {
+    const S = this.surfaceManager;
+    const spots = [
+      { x: -95, z: 145, w: 32, h: 36, d: 24, title: "HOTEL MALABAR ★", col: "#ff4f8b", glow: "#ff8fb3", wall: "#d8b3ad", neon: 0xff4f8b },
+      { x: -95, z: 185, w: 28, h: 42, d: 26, title: "OCEAN DRIVE CAFE 🌴", col: "#35d6ea", glow: "#8ff0fa", wall: "#9cc0c6", neon: 0x35d6ea },
+      { x: -40, z: 130, w: 34, h: 48, d: 28, title: "VICE CITY KAKKANAD", col: "#ff4f8b", glow: "#ff8fb3", wall: "#e6ddd2", neon: 0xff4f8b },
+      { x: 120, z: 180, w: 40, h: 60, d: 30, title: "KOCHI SYNTH LOUNGE 🍸", col: "#c85fe0", glow: "#e3a3f2", wall: "#9b90a6", neon: 0xc85fe0 },
+      { x: 260, z: 60, w: 45, h: 70, d: 35, title: "INFOPARK BOULEVARD", col: "#35d6ea", glow: "#8ff0fa", wall: "#56606b", neon: 0x35d6ea, curtain: true },
+      { x: 420, z: 220, w: 35, h: 50, d: 30, title: "EDACHIRA PLAZA ★", col: "#ffcc4d", glow: "#ffe49e", wall: "#dcc38a", neon: 0xffcc4d },
     ];
 
-    buildingSpots.forEach((b) => {
-      const bldgGroup = new THREE.Group();
-
-      // Textured facade with illuminated window grids
-      const winTex = this.createBuildingWindowTexture(b.baseCol, b.winCol);
-      const bldgMat = new THREE.MeshStandardMaterial({
-        map: winTex,
-        roughness: 0.4,
-        metalness: 0.1
+    spots.forEach((b, idx) => {
+      const facade = S.createFacadeMaterial({
+        wall: b.wall,
+        style: b.curtain ? "curtain" : "plaster",
+        cols: b.curtain ? 8 : 4,
+        seed: idx + 11,
+        glass: b.curtain ? "#2c4250" : "#26323a",
+        frame: b.curtain ? "#8d949b" : "#e3e0d8",
+        glassMetal: b.curtain ? 0.55 : 0.3,
+        lit: 0.42,
       });
+      const floorH = b.h / Math.max(1, Math.round(b.h / 3.6));
+      const group = new THREE.Group();
 
-      // Main building body
-      const bGeo = new THREE.BoxGeometry(b.w, b.h, b.d);
-      const bMesh = new THREE.Mesh(bGeo, bldgMat);
-      bMesh.position.y = b.h / 2;
-      bMesh.castShadow = true;
-      bldgGroup.add(bMesh);
+      const body = new THREE.Mesh(S.box(b.w, b.h, b.d, 12, floorH * 4), [facade, facade, S.roofMaterial, S.roofMaterial, facade, facade]);
+      body.position.y = b.h / 2;
+      body.castShadow = true;
+      body.receiveShadow = true;
+      group.add(body);
 
-      // Glowing Canvas Neon Signboard
-      const signTex = this.createNeonSignTexture(b.title, b.col, b.glow);
-      const signMat = new THREE.MeshBasicMaterial({ map: signTex });
-      const signGeo = new THREE.BoxGeometry(b.w * 0.85, 5.5, 0.8);
-      const sign = new THREE.Mesh(signGeo, signMat);
-      sign.position.set(0, b.h + 3.2, b.d / 2 + 0.4);
-      bldgGroup.add(sign);
+      const sign = this.signBoard(b.w * 0.85, b.title, b.col, b.glow);
+      sign.position.set(0, b.h + 3.2, b.d / 2 + 0.3);
+      sign.castShadow = true;
+      group.add(sign);
 
-      // Top glowing neon crown tube
-      const crownMat = new THREE.MeshBasicMaterial({ color: b.col === "#00f0ff" ? 0x00f0ff : (b.col === "#ffd166" ? 0xffd166 : 0xff007f) });
-      const crownGeo = new THREE.BoxGeometry(b.w + 0.8, 1.0, b.d + 0.8);
-      const crown = new THREE.Mesh(crownGeo, crownMat);
-      crown.position.y = b.h;
-      bldgGroup.add(crown);
-
-      // Mid-level horizontal neon strip
-      const stripGeo = new THREE.BoxGeometry(b.w + 0.5, 0.6, b.d + 0.5);
-      const strip = new THREE.Mesh(stripGeo, crownMat);
+      const tube = this.neon(b.neon);
+      const crown = new THREE.Mesh(new THREE.BoxGeometry(b.w + 0.6, 0.35, b.d + 0.6), tube);
+      crown.position.y = b.h + 0.1;
+      group.add(crown);
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(b.w + 0.3, 0.25, b.d + 0.3), tube);
       strip.position.y = b.h * 0.55;
-      bldgGroup.add(strip);
+      group.add(strip);
 
-      bldgGroup.position.set(b.x, 0, b.z);
-      this.scene.add(bldgGroup);
+      group.position.set(b.x, 0, b.z);
+      this.batcher.add(group);
+      this.addCollider(b.x, b.h / 2 + 3, b.z, b.w / 2, b.h / 2 + 3, b.d / 2 + 0.6);
     });
   }
 
-  // --- 5. Key Kakkanad Landmarks ---
+  // --- 4. Landmarks ----------------------------------------------------------------------
   buildLandmarks() {
+    const S = this.surfaceManager;
+    const facade = (opts) => S.createFacadeMaterial(opts);
+
     this.landmarks.forEach((lm) => {
       const group = new THREE.Group();
       group.position.set(lm.x, 0, lm.z);
 
       if (lm.id === "infopark") {
-        // Athulya & Vismaya IT Glass Towers
-        const towerGeo = new THREE.BoxGeometry(65, 105, 45);
-        const tower = new THREE.Mesh(towerGeo, this.glassBuildingMat);
+        const glass = facade({ style: "curtain", cols: 8, wall: "#1f2a33", glass: "#2e4a5a", frame: "#9aa1a8", seed: 31, lit: 0.5, glassMetal: 0.6, glassRough: 0.05 });
+        const tower = new THREE.Mesh(S.box(65, 105, 45, 12, 14), [glass, glass, S.roofMaterial, S.roofMaterial, glass, glass]);
         tower.position.y = 52.5;
         tower.castShadow = true;
+        tower.receiveShadow = true;
         group.add(tower);
-
-        // Glowing Neon "INFOPARK ATHULYA" Rooftop Sign
-        const signGeo = new THREE.BoxGeometry(45, 6, 2);
-        const sign = new THREE.Mesh(signGeo, this.neonCyanMat);
+        const sign = new THREE.Mesh(new THREE.BoxGeometry(45, 6, 2), this.neon(0x35d6ea, 0.8, 4.5));
         sign.position.set(0, 108, 22.8);
         group.add(sign);
-
-        // Neon Crown Trim
-        const trimGeo = new THREE.BoxGeometry(66, 1.2, 46);
-        const trim = new THREE.Mesh(trimGeo, this.neonPinkMat);
-        trim.position.y = 105.5;
+        const trim = new THREE.Mesh(new THREE.BoxGeometry(66, 0.6, 46), this.neon(0xff4f8b));
+        trim.position.y = 105.3;
         group.add(trim);
-
-        // Carnival Food Court Annex
-        const foodGeo = new THREE.BoxGeometry(35, 14, 35);
-        const foodMat = new THREE.MeshStandardMaterial({ color: 0xffb703, roughness: 0.4 });
-        const foodCourt = new THREE.Mesh(foodGeo, foodMat);
+        const food = facade({ wall: "#e0b659", cols: 4, seed: 32, lit: 0.6 });
+        const foodCourt = new THREE.Mesh(S.box(35, 14, 35, 12, 14), [food, food, S.roofMaterial, S.roofMaterial, food, food]);
         foodCourt.position.set(55, 7, 0);
+        foodCourt.castShadow = true;
+        foodCourt.receiveShadow = true;
         group.add(foodCourt);
-
+        this.addCollider(lm.x, 55, lm.z, 32.5, 55, 22.5);
+        this.addCollider(lm.x + 55, 7, lm.z, 17.5, 7, 17.5);
       } else if (lm.id === "collectorate") {
-        // Civil Station / Collectorate Administrative Building
-        const mainGeo = new THREE.BoxGeometry(90, 32, 50);
-        const mainBldg = new THREE.Mesh(mainGeo, this.concreteMat);
-        mainBldg.position.y = 16;
-        mainBldg.castShadow = true;
-        group.add(mainBldg);
-
-        // Porch
-        const porchGeo = new THREE.BoxGeometry(34, 10, 18);
-        const porch = new THREE.Mesh(porchGeo, this.concreteMat);
+        const civil = facade({ wall: "#e5dfcf", frame: "#7a5a3c", glass: "#2b2f2e", cols: 4, seed: 41, lit: 0.3 });
+        const main = new THREE.Mesh(S.box(90, 32, 50, 12, 14.4), [civil, civil, S.roofMaterial, S.roofMaterial, civil, civil]);
+        main.position.y = 16;
+        main.castShadow = true;
+        main.receiveShadow = true;
+        group.add(main);
+        const porch = new THREE.Mesh(S.box(34, 10, 18, 4, 4), S.concreteMaterial);
         porch.position.set(0, 5, 32);
+        porch.castShadow = true;
+        porch.receiveShadow = true;
         group.add(porch);
-
-        // Indian Tricolor Flag Mast on Roof
-        const mastGeo = new THREE.CylinderGeometry(0.1, 0.1, 14, 8);
-        const mast = new THREE.Mesh(mastGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }));
-        mast.position.set(0, 38, 0);
+        const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 14, 8), this.whitePaintMat);
+        mast.position.set(0, 39, 0);
+        mast.castShadow = true;
         group.add(mast);
-
+        this.addCollider(lm.x, 16, lm.z, 45, 16, 25);
+        this.addCollider(lm.x, 5, lm.z + 32, 17, 5, 9);
       } else if (lm.id === "smartcity") {
-        // Futuristic Angled IT Towers
-        const scGeo = new THREE.BoxGeometry(52, 120, 52);
-        const scTower = new THREE.Mesh(scGeo, new THREE.MeshStandardMaterial({ color: 0x14213d, roughness: 0.1, metalness: 0.9 }));
-        scTower.position.y = 60;
-        scTower.rotation.y = 0.25;
-        group.add(scTower);
-
-        const neonEdge = new THREE.Mesh(new THREE.BoxGeometry(54, 2, 54), this.neonCyanMat);
-        neonEdge.position.y = 120;
-        group.add(neonEdge);
-
+        const glass = facade({ style: "curtain", cols: 8, wall: "#141d2b", glass: "#20344a", frame: "#7e8792", seed: 51, lit: 0.45, glassMetal: 0.65, glassRough: 0.05 });
+        const tower = new THREE.Mesh(S.box(52, 120, 52, 12, 14), [glass, glass, S.roofMaterial, S.roofMaterial, glass, glass]);
+        tower.position.y = 60;
+        tower.rotation.y = 0.25;
+        tower.castShadow = true;
+        tower.receiveShadow = true;
+        group.add(tower);
+        const edge = new THREE.Mesh(new THREE.BoxGeometry(54, 1.2, 54), this.neon(0x35d6ea));
+        edge.position.y = 120;
+        edge.rotation.y = 0.25;
+        group.add(edge);
+        this.addCollider(lm.x, 60, lm.z, 26, 60, 26, 0.25);
       } else if (lm.id === "watermetro") {
-        // Kochi Water Metro Kakkanad Jetty
-        const terminalGeo = new THREE.BoxGeometry(42, 10, 26);
-        const terminalMat = new THREE.MeshStandardMaterial({ color: 0x0077b6, roughness: 0.4 });
-        const terminal = new THREE.Mesh(terminalGeo, terminalMat);
-        terminal.position.y = 5.0;
+        const terminalMat = facade({ style: "curtain", cols: 6, wall: "#1d5f8c", glass: "#2f5566", frame: "#c9ced3", seed: 61, lit: 0.6 });
+        const terminal = new THREE.Mesh(S.box(42, 10, 26, 12, 14), [terminalMat, terminalMat, S.roofMaterial, S.roofMaterial, terminalMat, terminalMat]);
+        terminal.position.y = 5;
+        terminal.castShadow = true;
+        terminal.receiveShadow = true;
         group.add(terminal);
-
-        const pontoonGeo = new THREE.BoxGeometry(22, 1.5, 36);
-        const pontoon = new THREE.Mesh(pontoonGeo, this.concreteMat);
+        const pontoon = new THREE.Mesh(S.box(22, 1.5, 36, 4, 1.5), S.concreteMaterial);
         pontoon.position.set(30, 0.5, 0);
+        pontoon.receiveShadow = true;
         group.add(pontoon);
-
+        this.addCollider(lm.x, 5, lm.z, 21, 5, 13);
       } else if (lm.id === "bus_stand") {
-        // Kakkanad Private Bus Terminal Shed (Spacious open passenger concourse)
-        const shedGeo = new THREE.BoxGeometry(65, 0.8, 28);
-        const shedRoof = new THREE.Mesh(shedGeo, this.thattukadaRoofMat);
-        shedRoof.position.y = 7.8;
-
-        const pGeo = new THREE.CylinderGeometry(0.2, 0.2, 7.8, 8);
+        const roof = new THREE.Mesh(new THREE.BoxGeometry(65, 0.5, 28), this.sheetRoofMat);
+        roof.position.y = 7.9;
+        roof.castShadow = true;
+        roof.receiveShadow = true;
+        group.add(roof);
+        const pillarGeo = new THREE.CylinderGeometry(0.22, 0.22, 7.8, 10);
         [-26, -14, 14, 26].forEach((px) => {
           [-12, 12].forEach((pz) => {
-            const p = new THREE.Mesh(pGeo, this.concreteMat);
+            const p = new THREE.Mesh(pillarGeo, S.concreteMaterial);
             p.position.set(px, 3.9, pz);
+            p.castShadow = true;
             group.add(p);
           });
         });
-        group.add(shedRoof);
+        this.addCollider(lm.x, 7.9, lm.z, 32.5, 0.4, 14);
       }
 
-      this.scene.add(group);
+      this.batcher.add(group);
     });
   }
 
-  // --- 6. Authentic Thattukada Tea Stalls ---
+  // --- 5. Thattukada tea stalls ------------------------------------------------------
   buildThattukadas() {
     const spots = [
       { x: 380, z: 150 },
       { x: -45, z: 185 },
-      { x: 490, z: -270 }
+      { x: 490, z: -270 },
     ];
-
     spots.forEach((pt) => {
       const stall = new THREE.Group();
-
-      const baseGeo = new THREE.BoxGeometry(4.8, 2.5, 3.2);
-      const base = new THREE.Mesh(baseGeo, new THREE.MeshStandardMaterial({ color: 0x582f0e }));
+      const base = new THREE.Mesh(new THREE.BoxGeometry(4.8, 2.5, 3.2), this.woodMat);
       base.position.y = 1.25;
-
+      base.castShadow = true;
+      base.receiveShadow = true;
       const roofGeo = new THREE.ConeGeometry(3.8, 1.5, 4);
       roofGeo.rotateY(Math.PI / 4);
-      const roof = new THREE.Mesh(roofGeo, this.thattukadaRoofMat);
+      const roof = new THREE.Mesh(roofGeo, this.tileRoofMat);
       roof.position.y = 3.2;
-
-      // Glowing Tea Glass Lantern & Neon Sign
-      const lampGeo = new THREE.SphereGeometry(0.25, 8, 8);
-      const lamp = new THREE.Mesh(lampGeo, this.neonGoldMat);
+      roof.castShadow = true;
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), this.neon(0xffc56b, 1.0, 7.0));
       lamp.position.set(0, 2.2, 1.7);
-
-      const sign = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.4, 0.1), this.neonPinkMat);
+      const sign = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.4, 0.1), this.neon(0xff4f8b));
       sign.position.set(0, 2.7, 1.65);
-
-      stall.add(base);
-      stall.add(roof);
-      stall.add(lamp);
-      stall.add(sign);
+      stall.add(base, roof, lamp, sign);
       stall.position.set(pt.x, 0, pt.z);
-      this.scene.add(stall);
+      this.batcher.add(stall);
+      this.addCollider(pt.x, 1.8, pt.z, 2.6, 1.8, 1.8);
     });
   }
 
-  // --- 7. Coconut Palm Trees & Tropical Foliage ---
+  // --- 6. Coconut palms & banana plants (FoliageManager feeds the batcher) -----------------
   buildPalmTrees() {
-    if (typeof window.FoliageManager !== "undefined") {
-      this.foliageManager = new window.FoliageManager(this.scene);
-      this.foliageManager.populateMapFoliage(this);
-    } else {
-      const palmLocations = [
-        { x: -62, z: 165 }, { x: -78, z: 155 }, { x: -62, z: 145 }, { x: -78, z: 175 },
-        { x: -60, z: 220 }, { x: -80, z: 260 }, { x: 340, z: 90 }, { x: 370, z: 70 },
-        { x: 500, z: -380 }, { x: 540, z: -410 }, { x: 860, z: -460 }, { x: 920, z: 160 }
-      ];
-
-      palmLocations.forEach((loc) => {
-        const palm = new THREE.Group();
-        const trunkGeo = new THREE.CylinderGeometry(0.22, 0.35, 8.5, 8);
-        const trunk = new THREE.Mesh(trunkGeo, this.palmTrunkMat);
-        trunk.position.y = 4.25;
-        trunk.rotation.z = 0.08;
-        palm.add(trunk);
-
-        for (let i = 0; i < 7; i++) {
-          const leafGeo = new THREE.ConeGeometry(1.3, 4.4, 5);
-          const leaf = new THREE.Mesh(leafGeo, this.palmLeafMat);
-          leaf.position.set(0, 8.4, 0);
-          leaf.rotation.z = 0.85;
-          leaf.rotation.y = (i / 7) * Math.PI * 2;
-          palm.add(leaf);
-        }
-
-        palm.position.set(loc.x, 0, loc.z);
-        this.scene.add(palm);
-      });
-    }
+    this.foliageManager = new window.FoliageManager(this.scene);
+    this.foliageManager.populateMapFoliage(this);
   }
 
   getNearestRoadPoint(pos) {
@@ -538,7 +616,7 @@ class KakkanadMapManager {
       id: l.id,
       name: l.name,
       position: new THREE.Vector3(l.x, 0, l.z),
-      color: l.color
+      color: l.color,
     }));
   }
 }

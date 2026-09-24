@@ -23,13 +23,16 @@ class MissionEngine {
       opacity: 0.45,
       side: THREE.DoubleSide
     });
+    cylMat.userData.glow = { day: 1.6, night: 2.4 };
     this.beaconCylinder = new THREE.Mesh(cylGeo, cylMat);
     this.beaconCylinder.position.y = 7;
     this.beaconGroup.add(this.beaconCylinder);
 
     const ringGeo = new THREE.RingGeometry(1.5, 3.2, 16);
     ringGeo.rotateX(-Math.PI / 2);
-    this.beaconRing = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0xff007f, side: THREE.DoubleSide }));
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0xff007f, side: THREE.DoubleSide });
+    ringMat.userData.glow = { day: 1.6, night: 2.4 };
+    this.beaconRing = new THREE.Mesh(ringGeo, ringMat);
     this.beaconRing.position.y = 0.15;
     this.beaconGroup.add(this.beaconRing);
 

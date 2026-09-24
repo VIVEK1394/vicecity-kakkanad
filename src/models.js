@@ -6,34 +6,50 @@
 
 class VehicleModelFactory {
   constructor() {
-    // Reusable Materials Palette
-    this.tireMaterial = new THREE.MeshStandardMaterial({ color: 0x161616, roughness: 0.9 });
-    this.rimMaterial = new THREE.MeshStandardMaterial({ color: 0xd4d8e0, metalness: 0.95, roughness: 0.1, envMapIntensity: 2.0 });
-    this.glassMaterial = new THREE.MeshStandardMaterial({ color: 0x061524, roughness: 0.05, metalness: 0.95, transparent: true, opacity: 0.85, envMapIntensity: 2.5 });
-    this.chromeMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 1.0, roughness: 0.05, envMapIntensity: 2.5 });
-    this.headlightMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    this.taillightMaterial = new THREE.MeshBasicMaterial({ color: 0xff0033 });
+    // Physically based palette (colours authored in sRGB, linearised by GFX.prepareScene).
+    this.paintMaterials = [];
+    this.tireMaterial = new THREE.MeshStandardMaterial({ color: 0x1c1c1c, roughness: 0.92 });
+    this.rimMaterial = new THREE.MeshStandardMaterial({ color: 0xc3c7cd, metalness: 1.0, roughness: 0.32 });
+    this.glassMaterial = new THREE.MeshStandardMaterial({ color: 0x0f1a20, roughness: 0.04, metalness: 0.3, transparent: true, opacity: 0.62 });
+    this.chromeMaterial = new THREE.MeshStandardMaterial({ color: 0xd9d9d9, metalness: 1.0, roughness: 0.12 });
+    this.trimMaterial = new THREE.MeshStandardMaterial({ color: 0x24262b, roughness: 0.7 });
+    this.headlightMaterial = new THREE.MeshBasicMaterial({ color: 0xfff3dc });
+    this.headlightMaterial.userData.glow = { day: 1.3, night: 9.0 };
+    this.taillightMaterial = new THREE.MeshBasicMaterial({ color: 0xff1a1a });
+    this.taillightMaterial.userData.glow = { day: 1.0, night: 4.0 };
 
-    // Kerala Liveries with High-Gloss 80s Automotive Sheen
-    this.autoGreenMat = new THREE.MeshStandardMaterial({ color: 0x145a32, roughness: 0.22, metalness: 0.6, envMapIntensity: 1.8 });
-    this.autoYellowMat = new THREE.MeshStandardMaterial({ color: 0xf39c12, roughness: 0.25, metalness: 0.5, envMapIntensity: 1.8 });
-    this.busRedMat = new THREE.MeshStandardMaterial({ color: 0xb01a24, roughness: 0.25, metalness: 0.55, envMapIntensity: 1.6 });
-    this.busYellowMat = new THREE.MeshStandardMaterial({ color: 0xf1c40f, roughness: 0.25, metalness: 0.45, envMapIntensity: 1.6 });
-    this.policeWhiteMat = new THREE.MeshStandardMaterial({ color: 0xf8f9fa, roughness: 0.2, metalness: 0.65, envMapIntensity: 2.0 });
-    this.policeBlueStripe = new THREE.MeshStandardMaterial({ color: 0x0077b6, roughness: 0.2, metalness: 0.6, envMapIntensity: 1.8 });
-    this.ambassadorWhite = new THREE.MeshStandardMaterial({ color: 0xedf2f4, roughness: 0.2, metalness: 0.7, envMapIntensity: 2.0 });
-    this.strobeRedMat = new THREE.MeshBasicMaterial({ color: 0xff0033 });
-    this.strobeBlueMat = new THREE.MeshBasicMaterial({ color: 0x0088ff });
-
-    // Vice City Neon Materials
-    this.neonPinkMat = new THREE.MeshBasicMaterial({ color: 0xff007f });
-    this.neonCyanMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff });
-    this.neonGoldMat = new THREE.MeshBasicMaterial({ color: 0xffb703 });
-    this.neonPurpleMat = new THREE.MeshBasicMaterial({ color: 0x9d4edd });
+    // Kerala liveries: dielectric paint under a clear coat (clearcoat strength follows the quality tier)
+    this.autoGreenMat = this.paint(0x1d6b3b);
+    this.autoYellowMat = this.paint(0xf0b21a);
+    this.busRedMat = this.paint(0xb3141f);
+    this.busYellowMat = this.paint(0xf1c40f);
+    this.policeWhiteMat = this.paint(0xeef0f2);
+    this.policeBlueStripe = this.paint(0x1c5fa8);
+    this.ambassadorWhite = this.paint(0xe8ebeb);
+    this.strobeRedMat = new THREE.MeshBasicMaterial({ color: 0xff1030 });
+    this.strobeRedMat.userData.glow = { day: 5.0, night: 9.0 };
+    this.strobeBlueMat = new THREE.MeshBasicMaterial({ color: 0x1070ff });
+    this.strobeBlueMat.userData.glow = { day: 5.0, night: 9.0 };
 
     // Procedural Textures for Authentic 80s Tommy Vercetti
     this.shirtTexture = this.createTommyShirtTexture();
     this.jeansTexture = this.createTommyJeansTexture();
+  }
+
+  paint(hex, metalness = 0.12) {
+    const mat = new THREE.MeshPhysicalMaterial({
+      color: hex,
+      roughness: 0.34,
+      metalness: metalness,
+      clearcoat: 0,
+      clearcoatRoughness: 0.07
+    });
+    this.paintMaterials.push(mat);
+    return mat;
+  }
+
+  setClearcoat(amount) {
+    this.paintMaterials.forEach((m) => (m.clearcoat = amount));
   }
 
   createTommyShirtTexture() {
@@ -197,7 +213,7 @@ class VehicleModelFactory {
 
     // Driver Seat & Passenger Bench
     const seatGeo = new THREE.BoxGeometry(1.1, 0.25, 0.5);
-    const seatMat = new THREE.MeshStandardMaterial({ color: 0x2b2d42 });
+    const seatMat = new THREE.MeshStandardMaterial({ color: 0x2b2d36, roughness: 0.85 });
     const rearSeat = new THREE.Mesh(seatGeo, seatMat);
     rearSeat.position.set(0, 0.7, -0.65);
     group.add(rearSeat);
@@ -273,7 +289,9 @@ class VehicleModelFactory {
 
     // "MINNAL" Destination Board Box on Top
     const signGeo = new THREE.BoxGeometry(1.8, 0.4, 0.2);
-    const signBox = new THREE.Mesh(signGeo, new THREE.MeshBasicMaterial({ color: 0x00f0ff }));
+    const signMat = new THREE.MeshBasicMaterial({ color: 0x35d6ea });
+    signMat.userData.glow = { day: 1.0, night: 3.0 };
+    const signBox = new THREE.Mesh(signGeo, signMat);
     signBox.position.set(0, 2.65, 5.6);
     group.add(signBox);
 
@@ -339,7 +357,7 @@ class VehicleModelFactory {
 
     // Open Cabin Roll Cage & Canopy Frame
     const cageGeo = new THREE.BoxGeometry(1.7, 0.9, 2.2);
-    const cageMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.5 });
+    const cageMat = this.trimMaterial;
     const cage = new THREE.Mesh(cageGeo, cageMat);
     cage.position.set(0, 1.6, -0.5);
     group.add(cage);
@@ -454,7 +472,7 @@ class VehicleModelFactory {
     const group = new THREE.Group();
     group.name = "superbike";
 
-    const tankMat = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.8, roughness: 0.2 });
+    const tankMat = this.paint(0x151515, 0.35);
 
     const tankGeo = new THREE.BoxGeometry(0.5, 0.35, 0.9);
     const tank = new THREE.Mesh(tankGeo, tankMat);
@@ -496,11 +514,7 @@ class VehicleModelFactory {
     const group = new THREE.Group();
     group.name = "sportsCar";
 
-    const bodyMat = new THREE.MeshStandardMaterial({
-      color: colorHex,
-      metalness: 0.75,
-      roughness: 0.2
-    });
+    const bodyMat = this.paint(colorHex, 0.45);
 
     const bodyGeo = new THREE.BoxGeometry(2.1, 0.45, 4.5);
     const body = new THREE.Mesh(bodyGeo, bodyMat);
@@ -545,20 +559,20 @@ class VehicleModelFactory {
     const group = new THREE.Group();
     group.name = "playerCharacter";
 
-    const skinMat = new THREE.MeshStandardMaterial({ color: 0xd4a373, roughness: 0.55 });
+    const skinMat = new THREE.MeshStandardMaterial({ color: 0xb98356, roughness: 0.55 });
     const shirtMat = new THREE.MeshStandardMaterial({
       map: this.shirtTexture,
-      roughness: 0.5,
-      metalness: 0.1
+      roughness: 0.8,
+      metalness: 0.0
     });
     const jeansMat = new THREE.MeshStandardMaterial({
       map: this.jeansTexture,
-      roughness: 0.8,
-      metalness: 0.05
+      roughness: 0.9,
+      metalness: 0.0
     });
-    const hairMat = new THREE.MeshStandardMaterial({ color: 0x1a0f07, roughness: 0.9 }); // Dark brown 80s hair
-    const shoeMat = new THREE.MeshStandardMaterial({ color: 0xf1f3f5, roughness: 0.6 });
-    const goldMat = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.95, roughness: 0.1, envMapIntensity: 2.0 });
+    const hairMat = new THREE.MeshStandardMaterial({ color: 0x1a0f07, roughness: 0.55 }); // Dark brown 80s hair
+    const shoeMat = new THREE.MeshStandardMaterial({ color: 0xe9ebed, roughness: 0.5 });
+    const goldMat = new THREE.MeshStandardMaterial({ color: 0xd8ab4a, metalness: 1.0, roughness: 0.25 });
 
     // Torso (Authentic Vice City Tropical Hawaiian Shirt)
     const torsoGeo = new THREE.BoxGeometry(0.55, 0.68, 0.32);
@@ -594,7 +608,7 @@ class VehicleModelFactory {
     group.add(glassFrame);
 
     const glassLensGeo = new THREE.BoxGeometry(0.23, 0.07, 0.05);
-    const glassLens = new THREE.Mesh(glassLensGeo, new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 0.05, metalness: 0.9 }));
+    const glassLens = new THREE.Mesh(glassLensGeo, new THREE.MeshStandardMaterial({ color: 0x080808, roughness: 0.05, metalness: 0.6 }));
     glassLens.position.set(0, 1.60, 0.155);
     group.add(glassLens);
 
@@ -656,8 +670,8 @@ class VehicleModelFactory {
   // --- Driver Avatar for Cockpit ---
   createDriverAvatar() {
     const avatar = new THREE.Group();
-    const shirtMat = new THREE.MeshStandardMaterial({ color: 0x00f0ff });
-    const skinMat = new THREE.MeshStandardMaterial({ color: 0xd4a373 });
+    const shirtMat = new THREE.MeshStandardMaterial({ color: 0x2aa8b8, roughness: 0.8 });
+    const skinMat = new THREE.MeshStandardMaterial({ color: 0xb98356, roughness: 0.55 });
 
     const torso = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.45, 0.25), shirtMat);
     torso.position.y = 0.3;
@@ -697,8 +711,10 @@ class VehicleModelFactory {
     const planeMat = new THREE.MeshBasicMaterial({
       map: tex,
       side: THREE.DoubleSide,
-      transparent: true
+      transparent: true,
+      fog: false
     });
+    planeMat.userData.glow = 1.25; // UI label: stays readable after tone mapping
     const mesh = new THREE.Mesh(planeGeo, planeMat);
     badgeGroup.add(mesh);
     badgeGroup.visible = false;

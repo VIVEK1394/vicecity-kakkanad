@@ -168,6 +168,7 @@ class ViceCityGameEngine {
   applyQuality(tier) {
     this.tier = tier;
     GFX.anisotropy = Math.min(tier.anisotropy, this.renderer.capabilities.getMaxAnisotropy());
+    window.vehicleModelFactory.setClearcoat(tier.clearcoat);
     this.renderer.shadowMap.type = tier.shadowSoft ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
     if (this.sunLight) {
       const shadow = this.sunLight.shadow;
@@ -214,6 +215,7 @@ class ViceCityGameEngine {
   // One simulation step (+ optional render). Also driven directly by the smoke test.
   tick(delta, render = true) {
     GFX.uniforms.gfxTime.value += delta;
+    this.mapManager.update(delta);
 
     // 1. Update Player Controller
     this.player.update(delta, this.mapManager, this.trafficManager, this.policeManager);
@@ -240,6 +242,7 @@ class ViceCityGameEngine {
 
     // 7. Update Dynamic Camera
     this.updateCamera(delta);
+    this.cullDynamicObjects();
 
     if (!render) return;
 
@@ -251,6 +254,24 @@ class ViceCityGameEngine {
       this.frameStats.calls = this.renderer.info.render.calls;
       this.frameStats.triangles = this.renderer.info.render.triangles;
     }
+  }
+
+  // Draw distance for vehicles and pedestrians: beyond it they are a few fogged pixels.
+  cullDynamicObjects() {
+    const cam = this.camera.position;
+    const vehicleRange2 = 350 * 350;
+    const pedRange2 = 160 * 160;
+    this.trafficManager.vehicles.forEach((v) => {
+      v.mesh.visible = v.isOccupied || v.mesh.position.distanceToSquared(cam) < vehicleRange2;
+    });
+    this.policeManager.policeUnits.forEach((p) => {
+      p.mesh.visible = p.isActive && p.mesh.position.distanceToSquared(cam) < vehicleRange2;
+    });
+    const starter = this.player.starterVehicle;
+    if (starter) starter.mesh.visible = starter.isOccupied || starter.mesh.position.distanceToSquared(cam) < vehicleRange2;
+    this.trafficManager.pedestrians.forEach((ped) => {
+      ped.group.visible = ped.group.position.distanceToSquared(cam) < pedRange2;
+    });
   }
 
   createViceCityEnvironmentMap() {
