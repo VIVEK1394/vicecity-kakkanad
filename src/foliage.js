@@ -267,7 +267,9 @@ class FoliageManager {
       const posAttr = frondGeo.attributes.position;
       for (let p = 0; p < posAttr.count; p++) {
         const yVal = posAttr.getY(p); // -length/2 to +length/2
-        const normY = (yVal + frondLength * 0.5) / frondLength; // 0 (stem) to 1 (tip)
+        // 0 (stem) to 1 (tip). Clamped: float error can make the stem row a tiny
+        // negative, and Math.pow(negative, 2.2) is NaN (broke ~half of all fronds).
+        const normY = Math.min(1, Math.max(0, (yVal + frondLength * 0.5) / frondLength));
         const bend = Math.pow(normY, 2.2) * (1.8 + droopTier * 0.4);
         posAttr.setZ(p, -bend);
       }

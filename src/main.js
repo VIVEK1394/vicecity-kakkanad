@@ -9,6 +9,13 @@ class ViceCityGameEngine {
     this.container = document.getElementById("canvas-container");
     this.lastTime = performance.now();
     this.cameraMode = 0; // 0 = Chase, 1 = Hood, 2 = High Bird's Eye
+    this.started = false;
+    this.startedAt = Infinity;
+    this.cameraNeedsSnap = true;
+
+    // ?test=1 (tools/smoke-test.js): no automatic loop; the harness steps frames via tick().
+    this.testMode = new URLSearchParams(window.location.search).get("test") === "1";
+    this.ready = false;
 
     // Three.js Core
     this.scene = null;
@@ -37,7 +44,7 @@ class ViceCityGameEngine {
 
     // 2. Camera Setup
     const aspect = window.innerWidth / window.innerHeight;
-    this.camera = new THREE.PerspectiveCamera(65, aspect, 0.5, 2800);
+    this.camera = new THREE.PerspectiveCamera(65, aspect, 0.3, 2800);
 
     // 3. WebGL Renderer
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
@@ -105,8 +112,10 @@ class ViceCityGameEngine {
       }
     });
 
+    this.ready = true;
+
     // Start 60 FPS Loop
-    requestAnimationFrame((t) => this.animate(t));
+    if (!this.testMode) requestAnimationFrame((t) => this.animate(t));
   }
 
   initUIListeners() {
@@ -127,6 +136,10 @@ class ViceCityGameEngine {
   }
 
   startGame() {
+    if (!this.started) {
+      this.started = true;
+      this.startedAt = performance.now();
+    }
     this.soundEngine.init();
     this.soundEngine.resume();
     this.soundEngine.showRadioBanner();
@@ -152,7 +165,11 @@ class ViceCityGameEngine {
 
     const delta = Math.min((currentTime - this.lastTime) / 1000, 0.1);
     this.lastTime = currentTime;
+    this.tick(delta, true);
+  }
 
+  // One simulation step (+ optional render). Also driven directly by the smoke test.
+  tick(delta, render = true) {
     // 1. Update Player Controller
     this.player.update(delta, this.mapManager, this.trafficManager, this.policeManager);
 
@@ -178,6 +195,8 @@ class ViceCityGameEngine {
 
     // 7. Update Dynamic Camera
     this.updateCamera(delta);
+
+    if (!render) return;
 
     // 8. Render 3D Scene (via RenderWare Post-Processing Composer if active)
     if (this.composer) {
@@ -243,7 +262,9 @@ class ViceCityGameEngine {
       lookTarget.copy(pPos);
       lookTarget.y += isInVehicle ? 1.0 : 1.4;
 
-      this.camera.position.lerp(targetCamPos, 12.0 * delta);
+      // Snap on the first frame instead of flying in from the world origin.
+      if (this.cameraNeedsSnap) this.camera.position.copy(targetCamPos);
+      else this.camera.position.lerp(targetCamPos, Math.min(1, 12.0 * delta));
       this.camera.lookAt(lookTarget);
 
     } else if (this.cameraMode === 1) {
@@ -270,9 +291,11 @@ class ViceCityGameEngine {
       // High Bird's Eye / Cinematic Cam
       targetCamPos.set(pPos.x - 18, pPos.y + 24, pPos.z - 18);
       lookTarget.copy(pPos);
-      this.camera.position.lerp(targetCamPos, 8.0 * delta);
+      if (this.cameraNeedsSnap) this.camera.position.copy(targetCamPos);
+      else this.camera.position.lerp(targetCamPos, Math.min(1, 8.0 * delta));
       this.camera.lookAt(lookTarget);
     }
+    this.cameraNeedsSnap = false;
   }
 }
 

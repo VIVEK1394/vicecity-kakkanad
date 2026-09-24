@@ -58,8 +58,11 @@ class PlayerController {
   }
 
   spawnStarterVehicle() {
+    // Parked ahead-left of the spawn point (still within the 6.8 m entry range) so the
+    // chase camera, which starts behind the player, never ends up inside the rickshaw.
     const starterMesh = window.vehicleModelFactory.createAutoRickshawMesh();
-    starterMesh.position.set(-67.5, 0, 158);
+    starterMesh.position.set(-66.5, 0, 164.5);
+    starterMesh.rotation.y = 0.1;
     this.scene.add(starterMesh);
 
     this.starterVehicle = {
@@ -67,12 +70,20 @@ class PlayerController {
       type: "AUTO_RICKSHAW",
       archetype: this.config.VEHICLE_ARCHETYPES.AUTO_RICKSHAW,
       mesh: starterMesh,
-      position: new THREE.Vector3(-67.5, 0, 158),
+      position: new THREE.Vector3(-66.5, 0, 164.5),
       heading: 0.1,
       speed: 0,
       steeringAngle: 0,
       isOccupied: false
     };
+  }
+
+  // Gameplay actions only count once the start modal has been dismissed, and never
+  // for the same click/keypress that dismissed it (Free Roam used to punch a ped).
+  acceptsActionInput(e) {
+    const engine = window.gameEngine;
+    if (!engine || !engine.started) return false;
+    return !e || !(e.timeStamp < engine.startedAt);
   }
 
   initInputListeners() {
@@ -85,11 +96,11 @@ class PlayerController {
         case "KeyD": case "ArrowRight": this.keys.right = true; break;
         case "ShiftLeft": case "ShiftRight": this.keys.sprint = true; break;
         case "Space":                   this.keys.jump = true; break;
-        case "KeyF": case "KeyE":       this.onActionKey(); break;
-        case "KeyH":                    this.onHornKey(); break;
+        case "KeyF": case "KeyE":       if (this.acceptsActionInput(e)) this.onActionKey(); break;
+        case "KeyH":                    if (this.acceptsActionInput(e)) this.onHornKey(); break;
         case "KeyR":                    this.soundEngine.nextStation(); break;
         case "KeyJ": case "ControlLeft": case "ControlRight": case "Enter":
-          if (this.state === "ON_FOOT") this.performPunch();
+          if (this.state === "ON_FOOT" && this.acceptsActionInput(e)) this.performPunch();
           break;
       }
     });
@@ -107,7 +118,7 @@ class PlayerController {
 
     // Left Mouse Click triggers Punch Attack
     window.addEventListener("mousedown", (e) => {
-      if (e.button === 0 && this.state === "ON_FOOT") {
+      if (e.button === 0 && this.state === "ON_FOOT" && this.acceptsActionInput(e)) {
         this.soundEngine.resume();
         this.performPunch();
       }

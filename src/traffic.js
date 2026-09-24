@@ -63,13 +63,14 @@ class TrafficManager {
 
   initPedestrians() {
     const pedColors = [0xe63946, 0x457b9d, 0x2a9d8f, 0xe76f51, 0xf4a261, 0x9d4edd];
-    // Include pedestrians right near spawn (-70, 160) for immediate combat and vehicle interactions
+    // Include pedestrians right near spawn (-70, 160) for immediate combat and vehicle interactions.
+    // They stand in front of the player (spawn faces +Z), not behind where the camera sits.
     const sidewalkSpots = [
-      { x: -70.0, z: 157.0 }, // Directly in front of Tommy at spawn
-      { x: -68.0, z: 155.0 }, // Right next to starter Auto Rickshaw
-      { x: -72.0, z: 154.0 },
-      { x: -65.0, z: 165.0 },
-      { x: -68.0, z: 152.0 },
+      { x: -71.5, z: 163.0 }, // Directly in front of Tommy at spawn
+      { x: -74.0, z: 166.0 },
+      { x: -76.0, z: 162.5 },
+      { x: -72.5, z: 169.5 },
+      { x: -69.0, z: 172.0 },
       { x: -75.0, z: 175.0 },
       { x: 350.0, z: 140.0 },
       { x: 370.0, z: 130.0 },
