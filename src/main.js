@@ -41,28 +41,41 @@ class ViceCityGameEngine {
     this.scene.environment = envMap;
     this.scene.background = envMap;
     this.scene.fog = new THREE.FogExp2(0x280b3d, 0.0004);
+    this.scene.fog.color.convertSRGBToLinear();
 
     // 2. Camera Setup
     const aspect = window.innerWidth / window.innerHeight;
     this.camera = new THREE.PerspectiveCamera(65, aspect, 0.3, 2800);
 
     // 3. WebGL Renderer
+    // Colour pipeline: linear lighting, ACES filmic tone mapping, sRGB output.
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.outputEncoding = THREE.sRGBEncoding;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.0;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.container.appendChild(this.renderer.domElement);
+    this.frameStats = { calls: 0, triangles: 0, path: "direct" };
+
+    this.quality = window.gfxQuality;
+    this.quality.init(this.renderer);
 
     // 4. Authentic Vice City Dual-Tone Sunset Lighting
     const ambLight = new THREE.AmbientLight(0xffecd2, 0.55); // Warm ambient fill
+    ambLight.color.convertSRGBToLinear();
     this.scene.add(ambLight);
 
     const hemiLight = new THREE.HemisphereLight(0xffbe53, 0x1f0d3d, 0.65); // Warm golden sky + twilight purple ground
+    hemiLight.color.convertSRGBToLinear();
+    hemiLight.groundColor.convertSRGBToLinear();
     this.scene.add(hemiLight);
 
     // Calibrated Directional Sunlight with Focused Real-Time Shadow Frustum
     const sunLight = new THREE.DirectionalLight(0xff9944, 1.8);
+    sunLight.color.convertSRGBToLinear();
     sunLight.position.set(200, 220, 150);
     sunLight.castShadow = true;
     sunLight.shadow.mapSize.width = 2048;
@@ -78,12 +91,8 @@ class ViceCityGameEngine {
     this.scene.add(sunLight);
     this.scene.add(sunLight.target);
 
-    // 7. RenderWare Post-Processing Composer (Trails, Unreal Bloom, 80s Miami Color Grading)
-    if (typeof window.PostProcessingComposer !== "undefined") {
-      this.composer = new window.PostProcessingComposer(this.renderer, this.scene, this.camera);
-    } else {
-      this.composer = null;
-    }
+    // 7. Post-processing pipeline (HDR path; Low renders straight to the canvas)
+    this.composer = null;
 
     // 8. Initialize Domain Systems (Sequential Integration Gates)
     this.mapManager = new window.KakkanadMapManager(this.scene);
@@ -100,6 +109,12 @@ class ViceCityGameEngine {
     window.missionEngine = this.missionEngine;
 
     this.hud = new window.HUDController(this.mapManager);
+
+    // Everything is built: convert authored sRGB colours to linear, then apply quality.
+    GFX.prepareScene(this.scene);
+    this.quality.onChange((tier) => this.applyQuality(tier));
+    this.quality.onResolutionChange(() => this.onResize());
+    this.quality.statsProvider = () => this.frameStats;
 
     // 6. UI & Modal Listeners
     this.initUIListeners();
@@ -150,10 +165,36 @@ class ViceCityGameEngine {
     this.lastTime = performance.now();
   }
 
+  applyQuality(tier) {
+    this.tier = tier;
+    GFX.anisotropy = Math.min(tier.anisotropy, this.renderer.capabilities.getMaxAnisotropy());
+    this.renderer.shadowMap.type = tier.shadowSoft ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    if (this.sunLight) {
+      const shadow = this.sunLight.shadow;
+      if (shadow.mapSize.x !== tier.shadowMapSize) {
+        shadow.mapSize.set(tier.shadowMapSize, tier.shadowMapSize);
+        if (shadow.map) {
+          shadow.map.dispose();
+          shadow.map = null;
+        }
+      }
+      const e = tier.shadowExtent;
+      shadow.camera.left = -e;
+      shadow.camera.right = e;
+      shadow.camera.top = e;
+      shadow.camera.bottom = -e;
+      shadow.camera.updateProjectionMatrix();
+    }
+    this.onResize();
+    // Tone mapping / shadow type are program parameters r128 doesn't track: recompile.
+    GFX.invalidateAll(this.scene);
+  }
+
   onResize() {
     if (!this.camera || !this.renderer) return;
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
+    this.renderer.setPixelRatio(this.quality ? this.quality.pixelRatio() : Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     if (this.composer) {
       this.composer.setSize(window.innerWidth, window.innerHeight);
@@ -163,13 +204,17 @@ class ViceCityGameEngine {
   animate(currentTime) {
     requestAnimationFrame((t) => this.animate(t));
 
-    const delta = Math.min((currentTime - this.lastTime) / 1000, 0.1);
+    const frameMs = currentTime - this.lastTime;
+    const delta = Math.min(frameMs / 1000, 0.1);
     this.lastTime = currentTime;
+    this.quality.frame(frameMs);
     this.tick(delta, true);
   }
 
   // One simulation step (+ optional render). Also driven directly by the smoke test.
   tick(delta, render = true) {
+    GFX.uniforms.gfxTime.value += delta;
+
     // 1. Update Player Controller
     this.player.update(delta, this.mapManager, this.trafficManager, this.policeManager);
 
@@ -203,6 +248,8 @@ class ViceCityGameEngine {
       this.composer.render(delta);
     } else {
       this.renderer.render(this.scene, this.camera);
+      this.frameStats.calls = this.renderer.info.render.calls;
+      this.frameStats.triangles = this.renderer.info.render.triangles;
     }
   }
 
@@ -239,6 +286,7 @@ class ViceCityGameEngine {
 
     const texture = new THREE.CanvasTexture(canvas);
     texture.mapping = THREE.EquirectangularReflectionMapping;
+    texture.encoding = THREE.sRGBEncoding;
     return texture;
   }
 
