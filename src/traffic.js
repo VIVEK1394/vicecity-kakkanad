@@ -184,6 +184,7 @@ class TrafficManager {
         }
       });
     }
+    return hitAny;
   }
 
   update(delta, player) {

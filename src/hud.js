@@ -8,6 +8,8 @@ class HUDController {
   constructor(mapManager, clock) {
     this.mapManager = mapManager;
     this.clock = clock || null; // shared TimeOfDay (drives sun, sky and lighting)
+    this.viewYaw = null; // camera yaw: the radar rotates with the view, like GTA
+    this.compassEl = document.querySelector(".compass-n");
     this.config = window.KAKKANAD_CONFIG;
 
     // DOM Elements
@@ -74,10 +76,21 @@ class HUDController {
 
     ctx.clearRect(0, 0, size, size);
 
-    // Save context for player-centric rotation
+    // View-aligned radar: camera forward is up, camera right is right.
+    const inCar = player.state === "IN_VEHICLE" && player.currentVehicle;
+    const heading = inCar ? player.currentVehicle.heading : player.heading;
+    const yaw = this.viewYaw !== null ? this.viewYaw : heading;
+    const fx = Math.sin(yaw);
+    const fz = Math.cos(yaw);
     ctx.save();
     ctx.translate(center, center);
-    ctx.rotate(-player.heading);
+    ctx.transform(-fz, -fx, fx, -fz, 0, 0); // columns: world +X -> (right . x, -forward . x), world +Z likewise
+    if (this.compassEl) {
+      // North (+Z) marker orbits the rim
+      this.compassEl.style.left = `${50 + 43 * fx}%`;
+      this.compassEl.style.top = `${50 - 43 * fz}%`;
+      this.compassEl.style.transform = "translate(-50%, -50%)";
+    }
 
     // A. Draw Kakkanad Road Network
     ctx.strokeStyle = "rgba(0, 240, 255, 0.45)";
@@ -148,17 +161,21 @@ class HUDController {
 
     ctx.restore();
 
-    // F. Draw Player Triangle in Center (Always faces forward)
+    // F. Player arrow in the centre, pointing where the player faces relative to the view
+    ctx.save();
+    ctx.translate(center, center);
+    ctx.rotate(-(heading - yaw));
     ctx.fillStyle = "#ff007f";
     ctx.strokeStyle = "#ffffff";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(center, center - 7);
-    ctx.lineTo(center - 5, center + 6);
-    ctx.lineTo(center + 5, center + 6);
+    ctx.moveTo(0, -7);
+    ctx.lineTo(-5, 6);
+    ctx.lineTo(5, 6);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
+    ctx.restore();
   }
 }
 

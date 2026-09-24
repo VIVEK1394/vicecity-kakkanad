@@ -108,7 +108,6 @@ function installHelpers() {
     },
     unpose() {
       delete g.updateCamera; // back to the prototype method
-      g.cameraNeedsSnap = true;
       if (g.cameraRig && g.cameraRig.snap) g.cameraRig.snap();
     },
     setTime(hhmm) {

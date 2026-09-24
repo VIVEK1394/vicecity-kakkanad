@@ -12,7 +12,6 @@ class ViceCityGameEngine {
     this.cameraMode = 0; // 0 = Chase, 1 = Hood, 2 = High Bird's Eye
     this.started = false;
     this.startedAt = Infinity;
-    this.cameraNeedsSnap = true;
 
     // ?test=1 (tools/smoke-test.js): no automatic loop; the harness steps frames via tick().
     this.testMode = new URLSearchParams(window.location.search).get("test") === "1";
@@ -76,6 +75,7 @@ class ViceCityGameEngine {
     window.missionEngine = this.missionEngine;
 
     this.hud = new window.HUDController(this.mapManager, this.timeOfDay);
+    this.cameraRig = new window.CameraRig(this.camera, this.renderer.domElement, this.mapManager);
 
     // Cheap lighting effects (all tiers)
     this.lampStreaks = new window.LampStreaks(this.scene, this.mapManager.streetLamps);
@@ -178,10 +178,11 @@ class ViceCityGameEngine {
     this.trafficManager.update(delta, this.player);
     this.policeManager.update(delta, this.player, this.mapManager);
     this.missionEngine.update(delta, this.player);
-    this.hud.update(this.player, this.trafficManager, this.policeManager, this.missionEngine, delta);
 
     this.updateCamera(delta);
     this.cullDynamicObjects();
+    this.hud.viewYaw = this.cameraRig.yaw;
+    this.hud.update(this.player, this.trafficManager, this.policeManager, this.missionEngine, delta);
 
     // Lighting follows the final camera for this frame.
     this.sky.update(delta, this.player, this.camera);
@@ -252,60 +253,13 @@ class ViceCityGameEngine {
   }
 
   updateCamera(delta) {
-    const pPos = this.player.position;
-    const pHeading = this.player.heading;
-    const isInVehicle = this.player.state === "IN_VEHICLE";
-
-    let targetCamPos = new THREE.Vector3();
-    let lookTarget = new THREE.Vector3();
-
-    if (this.cameraMode === 0) {
-      // 3rd Person Follow / Chase Cam
-      const distBehind = isInVehicle ? 7.5 : 4.5;
-      const heightAbove = isInVehicle ? 2.8 : 2.0;
-
-      const backDir = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), pHeading);
-      targetCamPos.copy(pPos).addScaledVector(backDir, distBehind);
-      targetCamPos.y = pPos.y + heightAbove;
-
-      lookTarget.copy(pPos);
-      lookTarget.y += isInVehicle ? 1.0 : 1.4;
-
-      // Snap on the first frame instead of flying in from the world origin.
-      if (this.cameraNeedsSnap) this.camera.position.copy(targetCamPos);
-      else this.camera.position.lerp(targetCamPos, Math.min(1, 12.0 * delta));
-      this.camera.lookAt(lookTarget);
-
-    } else if (this.cameraMode === 1) {
-      // Hood / First Person View
-      if (isInVehicle) {
-        const hoodOffset = new THREE.Vector3(0, 1.1, 1.2).applyAxisAngle(new THREE.Vector3(0, 1, 0), pHeading);
-        this.camera.position.copy(pPos).add(hoodOffset);
-
-        const fwdDir = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), pHeading);
-        lookTarget.copy(pPos).addScaledVector(fwdDir, 30.0);
-        lookTarget.y = pPos.y + 1.2;
-        this.camera.lookAt(lookTarget);
-      } else {
-        // First Person on foot
-        this.camera.position.copy(pPos);
-        this.camera.position.y += 1.6;
-        const fwdDir = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), pHeading);
-        lookTarget.copy(pPos).addScaledVector(fwdDir, 20.0);
-        lookTarget.y += 1.6;
-        this.camera.lookAt(lookTarget);
-      }
-
-    } else {
-      // High Bird's Eye / Cinematic Cam
-      targetCamPos.set(pPos.x - 18, pPos.y + 24, pPos.z - 18);
-      lookTarget.copy(pPos);
-      if (this.cameraNeedsSnap) this.camera.position.copy(targetCamPos);
-      else this.camera.position.lerp(targetCamPos, Math.min(1, 8.0 * delta));
-      this.camera.lookAt(lookTarget);
-    }
-    this.cameraNeedsSnap = false;
+    this.cameraRig.update(delta, this.player, this.cameraMode, this.trafficManager, this.policeManager);
+    if (this.cameraRig.wasCut && this.composer) this.composer.resetHistory();
+    // hide the driver's body in the hood / first-person view
+    const v = this.player.currentVehicle;
+    if (v && v.mesh.userData.driverAvatar) v.mesh.userData.driverAvatar.visible = this.cameraMode !== 1;
   }
+
 }
 
 // Instantiate robustly whether DOM is already interactive or still loading

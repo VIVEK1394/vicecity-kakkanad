@@ -118,6 +118,7 @@ class PlayerController {
 
     // Left Mouse Click triggers Punch Attack
     window.addEventListener("mousedown", (e) => {
+      if (e.gfxCaptureClick) return; // that click captured the mouse for camera look
       if (e.button === 0 && this.state === "ON_FOOT" && this.acceptsActionInput(e)) {
         this.soundEngine.resume();
         this.performPunch();
@@ -150,7 +151,8 @@ class PlayerController {
 
     // Check hit against nearby pedestrians
     if (window.trafficManager) {
-      window.trafficManager.checkPedestrianPunchHit(this);
+      const hit = window.trafficManager.checkPedestrianPunchHit(this);
+      if (hit && window.gameEngine && window.gameEngine.cameraRig) window.gameEngine.cameraRig.addShake(0.2);
     }
   }
 
@@ -171,10 +173,16 @@ class PlayerController {
     const moveSpeed = this.keys.sprint ? this.sprintSpeed : this.walkSpeed;
     const moveDir = new THREE.Vector3();
 
-    if (this.keys.up)    moveDir.z -= 1;
-    if (this.keys.down)  moveDir.z += 1;
-    if (this.keys.left)  moveDir.x -= 1;
-    if (this.keys.right) moveDir.x += 1;
+    // Camera-relative: W runs away from the camera, D towards screen right.
+    const rig = window.gameEngine && window.gameEngine.cameraRig;
+    const yaw = rig ? rig.yaw : Math.PI;
+    const fwdInput = (this.keys.up ? 1 : 0) - (this.keys.down ? 1 : 0);
+    const sideInput = (this.keys.right ? 1 : 0) - (this.keys.left ? 1 : 0);
+    moveDir.set(
+      Math.sin(yaw) * fwdInput - Math.cos(yaw) * sideInput,
+      0,
+      Math.cos(yaw) * fwdInput + Math.sin(yaw) * sideInput
+    );
 
     const isMoving = moveDir.lengthSq() > 0.01;
 
@@ -440,6 +448,8 @@ class PlayerController {
     } else {
       this.health = Math.max(0, this.health - amount);
     }
+
+    if (window.gameEngine && window.gameEngine.cameraRig) window.gameEngine.cameraRig.addShake(0.35);
 
     const flash = document.getElementById("hit-flash");
     if (flash) {
