@@ -61,6 +61,7 @@ class PostProcessingComposer {
 
   // --- configuration -------------------------------------------------------------------
   setQuality(tier) {
+    if (this.tier) this.dispose();
     this.tier = tier;
     const isWebGL2 = this.renderer.capabilities.isWebGL2;
     this.msaa = tier.msaa && isWebGL2 ? tier.msaa : 0;
@@ -77,6 +78,14 @@ class PostProcessingComposer {
 
   resetHistory() {
     this.hasHistory = false;
+  }
+
+  // Free the render targets (used when switching to the Low tier's direct path).
+  dispose() {
+    this.targets.forEach((t) => t.dispose());
+    this.targets = [];
+    if (this.sceneTarget && this.sceneTarget.depthTexture) this.sceneTarget.depthTexture.dispose();
+    this.tier = null;
   }
 
   makeTarget(w, h, opts) {

@@ -143,6 +143,8 @@ class ViceCityGameEngine {
     if (tier.post) {
       if (!this.composer) this.composer = new window.PostProcessingComposer(this.renderer, this.scene, this.camera);
       this.composer.setQuality(tier);
+    } else if (this.composer && this.composer.tier) {
+      this.composer.dispose();
     }
     // Tone mapping / shadow type are program parameters r128 doesn't track: recompile.
     GFX.invalidateAll(this.scene);

@@ -453,8 +453,15 @@ async function runTier(browser, port, tier) {
     });
     await page.screenshot({ path: path.join(SHOTS, `${tier}-driving.png`) });
     await page.evaluate(() => {
+      window.__smoke.setTime("22:00");
+      window.__smoke.run(0.5);
+      window.__smoke.render(3);
+    });
+    await page.screenshot({ path: path.join(SHOTS, `${tier}-driving-night.png`) });
+    await page.evaluate(() => {
       window.__smoke.key("KeyA", false);
       window.__smoke.key("KeyW", false);
+      window.__smoke.setTime("08:45");
     });
   }
 
@@ -471,6 +478,21 @@ async function runTier(browser, port, tier) {
       return seen.join(">");
     });
     results.push({ name: "runtimeQualitySwitch", pass: switched !== "", detail: { sequence: switched } });
+
+    // Dynamic resolution: sustained slow frames must lower the render scale and the
+    // pipeline must reallocate cleanly.
+    const governor = await page.evaluate(() => {
+      const q = window.gameEngine.quality;
+      if (!q) return null;
+      const was = q.governorEnabled;
+      q.governorEnabled = true;
+      for (let i = 0; i < 160; i++) q.frame(40);
+      const scale = q.scale;
+      window.__smoke.render(2);
+      q.governorEnabled = was;
+      return { scale, pixelRatio: window.gameEngine.renderer.getPixelRatio() };
+    });
+    if (governor) results.push({ name: "dynamicResolution", pass: governor.scale < 1, detail: governor });
   }
 
   await context.close();

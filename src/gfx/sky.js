@@ -173,6 +173,7 @@ const SkyShader = {
     uniform float uFogFalloff;
     uniform float uCamHeight;
     uniform float uTime;
+    uniform float uDesaturate;
 
     varying vec3 vWorldPosition;
     varying vec3 vSunDirection;
@@ -244,6 +245,8 @@ const SkyShader = {
       float fogF = ( 1.0 - exp( - clamp( fogAmount, 0.0, 60.0 ) ) ) * smoothstep( 0.35, 0.0, direction.y );
       sky = mix( sky, uFogColor, fogF );
 
+      sky = mix( sky, vec3( dot( sky, vec3( 0.2126, 0.7152, 0.0722 ) ) ), uDesaturate );
+
       // tiny dither against banding in 8-bit output paths
       sky += ( hash13( vec3( gl_FragCoord.xy, uTime ) ) - 0.5 ) * 0.0015;
 
@@ -277,7 +280,13 @@ class SkySystem {
     const makeMaterial = (sunDisc) =>
       new THREE.ShaderMaterial({
         name: "PreethamSky",
-        uniforms: Object.assign({}, shared, { uSunDisc: { value: sunDisc }, uCamHeight: { value: 2.0 } }),
+        // The environment (ambient light) capture is slightly desaturated: the pure
+        // Preetham sky would tint every shaded wall cyan.
+        uniforms: Object.assign({}, shared, {
+          uSunDisc: { value: sunDisc },
+          uCamHeight: { value: 2.0 },
+          uDesaturate: { value: sunDisc > 0 ? 0 : 0.25 },
+        }),
         vertexShader: SkyShader.vertexShader,
         fragmentShader: SkyShader.fragmentShader,
         side: THREE.BackSide,
