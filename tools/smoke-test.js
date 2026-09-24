@@ -230,6 +230,36 @@ function runScenario() {
   S.run(0.6);
   check("walk", walked > 4 && P.state === "ON_FOOT", { metres: +walked.toFixed(2) });
 
+  // Classic GTA controls: D turns the view right and the player turns with it (on the spot
+  // when standing); W + A runs round a left-hand curve with the view following.
+  const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+  const yaw0 = g.cameraRig.yaw;
+  p0 = P.position.clone();
+  S.key("KeyD", true);
+  S.run(1.0);
+  S.key("KeyD", false);
+  S.run(0.5);
+  const turnedR = wrap(yaw0 - g.cameraRig.yaw);
+  check("turnViewRight", turnedR > 1.2 && Math.abs(wrap(P.heading - g.cameraRig.yaw)) < 0.35 && P.position.distanceTo(p0) < 0.8, {
+    turnedRad: +turnedR.toFixed(2),
+    facingErr: +Math.abs(wrap(P.heading - g.cameraRig.yaw)).toFixed(2),
+    moved: +P.position.distanceTo(p0).toFixed(2),
+  });
+  const yaw1 = g.cameraRig.yaw;
+  p0 = P.position.clone();
+  S.key("KeyW", true);
+  S.key("KeyA", true);
+  S.run(1.0);
+  S.key("KeyA", false);
+  S.key("KeyW", false);
+  S.run(0.6);
+  const turnedL = wrap(g.cameraRig.yaw - yaw1);
+  check("runAndTurnLeft", turnedL > 1.0 && Math.abs(wrap(P.heading - g.cameraRig.yaw)) < 0.5 && P.position.distanceTo(p0) > 2, {
+    turnedRad: +turnedL.toFixed(2),
+    facingErr: +Math.abs(wrap(P.heading - g.cameraRig.yaw)).toFixed(2),
+    metres: +P.position.distanceTo(p0).toFixed(2),
+  });
+
   p0 = P.position.clone();
   S.key("KeyW", true);
   S.key("ShiftLeft", true);

@@ -14,8 +14,10 @@ Built with Three.js (r128, vendored) and the native Web Audio API: **zero npm pa
 | :---: | :---: |
 | ![Kakkanad Junction from above at golden hour](assets/screenshots/kakkanad_junction_aerial.png) | ![Padamugal, Civil Line Road](assets/screenshots/padamugal_civil_line_road.png) |
 | *Kakkanad Junction at golden hour: Civil Station (left), Seaport-Airport Road heading north, the bus stand (right), the Metro Pink Line viaduct* | *Padamugal, Civil Line Road: shop rows with flex boards, metro piers on the widened median* |
+| ![People on Civil Line Road](assets/screenshots/kakkanad_people.png) | ![Kerala traffic at a signal](assets/screenshots/kerala_vehicles.png) |
+| *Chembumukku, Civil Line Road: a churidar with a dupatta, sarees, a mundu, shirts and trousers* | *Waiting at a signal on Seaport-Airport Road: Ambassador, auto rickshaw, Bullet, Kerala Police SUV and a Minnal bus* |
 | ![Driving down Seaport-Airport Road](assets/screenshots/seaport_airport_road_drive.png) | ![Kakkanad bus stand at night](assets/screenshots/bus_stand_night.png) |
-| *Driving the auto past Cochin SEZ on Seaport-Airport Road* | *Night by Kakkanad bus stand, with a yellow mission marker* |
+| *Driving the auto up Seaport-Airport Road at Chittethukara, under the Metro Pink Line* | *Night by Kakkanad bus stand, with a yellow mission marker* |
 | ![Thrikkakara Vamanamoorthy Temple](assets/screenshots/thrikkakara_temple.png) | ![Infopark Road](assets/screenshots/infopark_road.png) |
 | *Thrikkakara Temple: laterite wall, gopuram, copper-roofed shrine, gold flagstaff and temple pond* | *Morning on Infopark Road* |
 
@@ -60,7 +62,17 @@ Built with Three.js (r128, vendored) and the native Web Audio API: **zero npm pa
   - per-tier draw distance and night-only light cones;
   - vehicles drop wheel and driver detail beyond 65 m;
   - dynamic resolution.
-  - The dense city renders in about 250 main and 80 shadow draw calls at street level.
+  - The dense city renders in about 270 main and 90 shadow draw calls at street level, people and traffic included.
+
+### Vehicles and people
+- **Vehicles** are modelled from side profiles with real proportions: wheel-arch cut-outs, rounded bevelled bodies, a narrower glasshouse with tinted glass, chrome and black trim, round or square lamps, Kerala number plates, lathe-turned tyres and rims (alloy, steel, hubcaps, wire spokes).
+  - **Auto rickshaw**: green tub, yellow canvas hood, single front wheel with a mudguard, commercial (yellow) plates.
+  - **Minnal private bus**: painted livery with its name and route, glowing route board, doors on the kerb side, roof rails.
+  - **Kerala Police SUV** with POLICE door panels, a light bar and a bull bar; the domed **Ambassador** with its chrome grille; the **Bullet 350** with a teardrop tank and a long exhaust; a wedge sports car.
+- **People** have sculpted heads (skull, brow, cheekbones, jaw, chin), a modelled nose and ears, and painted faces in real proportions: eyes with irises, brows, lips, Kerala moustaches and beards, bindis, kajal and sandal paste.
+  - Men wear shirts (collar, buttons, pocket) or T-shirts with a lungi, a mundu with a gold kasavu border, or trousers.
+  - Women wear sarees (some in the cream-and-gold Kerala set-saree) with the pallu over the shoulder, or a churidar with a dupatta. They have braids or a bun with jasmine, jhumkas and bangles.
+  - The player wears an open-necked Hawaiian shirt with a gold chain.
 
 ### Motion
 - **Camera**: GTA V-style third person.
@@ -70,7 +82,8 @@ Built with Three.js (r128, vendored) and the native Web Audio API: **zero npm pa
   - Mouse orbit with auto-recentre and subtle shake.
   - Hood/first-person and cinematic modes.
 - **On foot**:
-  - Camera-relative movement with acceleration, turn inertia and sprint.
+  - Classic GTA controls: `A`/`D` turn the view and the player turns with it (stepping round on the spot when standing still), `W`/`S` run where the camera looks. The camera settles in behind you when you run; the mouse is optional.
+  - Acceleration, turn inertia and sprint.
   - Procedural walk/run animation on a jointed rig: knees, elbows, lean, bob, banking into turns.
   - Punch wind-up and strike, jump and landing.
 - **Vehicles**:
@@ -101,8 +114,9 @@ Built with Three.js (r128, vendored) and the native Web Audio API: **zero npm pa
 
 | Action | Keybinding |
 | :--- | :--- |
-| **Move / Steer** | `W`, `A`, `S`, `D` or `Arrow Keys` (on foot, relative to the camera) |
-| **Look around** | Mouse: click the game to capture the mouse (`Esc` releases), or hold the right button and drag |
+| **Run forwards / back** | `W` / `S` or `↑` / `↓` (accelerate / brake and reverse when driving) |
+| **Turn** | `A` / `D` or `←` / `→`: the player and the view turn together, as in the classic GTA games, so you can play with the keyboard alone (steer when driving) |
+| **Look around (optional)** | Mouse: click the game to capture the mouse (`Esc` releases), or hold the right button and drag |
 | **Punch** | `Left-Click` or `Enter` / `J` |
 | **Enter / Carjack / Exit Vehicle** | `F` or `E` |
 | **Sprint** | `Shift` (hold while moving on foot) |
@@ -187,7 +201,7 @@ vicecity-kakkanad/
     ├── postprocessing.js   # HDR pipeline: SSAO, bloom, motion blur, SSR, ACES, FXAA
     ├── surfaces.js         # Procedural PBR surfaces (asphalt, pavers, curbs, ground, water, facades)
     ├── foliage.js          # Coconut palms and banana plants with wind sway
-    ├── models.js           # Vehicles (sprung body, palette material, lights), jointed character rigs
+    ├── models.js           # Vehicles (profile bodies, sprung body, palette material, lights), people (parametric heads, painted faces, rigs)
     ├── citygen.js          # Kerala building kit: facades, tiles, signs, boards, building types
     ├── map.js              # Roads, junctions, rivers, metro, landmarks, generated city, palms, collisions
     ├── vehicle-physics.js  # Tyre-model vehicle dynamics and suspension visuals
