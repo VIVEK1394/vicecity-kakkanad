@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Dev-only unit checks for the pure-maths modules (no browser needed):
- * vehicle dynamics per archetype, camera spring, time-of-day sun path.
+ * vehicle dynamics per archetype, camera spring, time-of-day sun path, and the
+ * real-Kakkanad map data / road graph.
  *   node tools/unit-checks.js
  */
 "use strict";
@@ -14,13 +15,13 @@ const ROOT = path.resolve(__dirname, "..");
 const context = { console, Math, performance: { now: () => 0 } };
 context.window = context;
 vm.createContext(context);
-["libs/three.min.js", "src/config.js", "src/vehicle-physics.js", "src/camera.js", "src/gfx/sky.js"].forEach((f) => {
+["libs/three.min.js", "src/data/kakkanad-geo.js", "src/config.js", "src/roadgraph.js", "src/vehicle-physics.js", "src/camera.js", "src/gfx/sky.js"].forEach((f) => {
   let code = fs.readFileSync(path.join(ROOT, f), "utf8");
   if (f.endsWith("three.min.js")) code = code.replace(/^/, "var exports = undefined, module = undefined, define = undefined;\n");
   vm.runInContext(code, context, { filename: f });
 });
-const { THREE, VehicleDynamics, VEHICLE_SURFACE, springDamp, TimeOfDay, KAKKANAD_CONFIG } = vm.runInContext(
-  "({ THREE, VehicleDynamics, VEHICLE_SURFACE, springDamp, TimeOfDay, KAKKANAD_CONFIG })",
+const { THREE, VehicleDynamics, VEHICLE_SURFACE, springDamp, TimeOfDay, KAKKANAD_CONFIG, KAKKANAD_GEO, RoadGraph } = vm.runInContext(
+  "({ THREE, VehicleDynamics, VEHICLE_SURFACE, springDamp, TimeOfDay, KAKKANAD_CONFIG, KAKKANAD_GEO, RoadGraph })",
   context
 );
 
@@ -126,6 +127,56 @@ Object.values(KAKKANAD_CONFIG.VEHICLE_ARCHETYPES).forEach((arch) => {
   tod.setTime(7, 0);
   tod.sunDirection(dir);
   check("morning sun rises in the east (+X)", dir.x > 0.5, `dir.x ${dir.x.toFixed(2)}`);
+  tod.setTime(12, 0);
+  tod.sunDirection(dir);
+  check("noon sun slightly south (+Z) at 10N, decl 5N", dir.z > 0.05 && dir.z < 0.15, `dir.z ${dir.z.toFixed(3)}`);
+}
+
+// --- real Kakkanad map data and road graph -------------------------------------------------
+{
+  const C = KAKKANAD_CONFIG;
+  const roads = C.ROAD_NETWORK;
+  const allPts = roads.flatMap((r) => r.points);
+  check("map data: roads with real names", roads.length >= 20 && roads.every((r) => r.name && r.points.length >= 2), `${roads.length} roads`);
+  check("map data: coordinates finite", allPts.every((p) => Number.isFinite(p.x) && Number.isFinite(p.z)), `${allPts.length} points`);
+  const names = roads.map((r) => r.name);
+  const must = ["Seaport-Airport Road", "Civil Line Road", "Infopark Expressway", "Kakkanad-Pallikkara Road"];
+  check("map data: main Kakkanad roads present", must.every((n) => names.includes(n)), must.filter((n) => !names.includes(n)).join(", ") || "all");
+  const lm = (id) => C.KEY_LANDMARKS.find((l) => l.id === id);
+  // bearings from Kakkanad Junction (origin): Infopark east-south-east, temple north-west
+  const bearing = (l) => ((Math.atan2(l.x, -l.z) * 180) / Math.PI + 360) % 360;
+  check("geography: Infopark ESE of Kakkanad Jn", bearing(lm("infopark")) > 100 && bearing(lm("infopark")) < 140, `${bearing(lm("infopark")).toFixed(0)} deg`);
+  check("geography: Thrikkakara temple NW", bearing(lm("temple")) > 300 && bearing(lm("temple")) < 340, `${bearing(lm("temple")).toFixed(0)} deg`);
+  check("geography: Water Metro south", bearing(lm("water_metro")) > 170 && bearing(lm("water_metro")) < 190, `${bearing(lm("water_metro")).toFixed(0)} deg`);
+
+  const g = new RoadGraph(roads);
+  const junctions = g.nodes.filter((n) => n.junction);
+  check("road graph: junctions found", junctions.length >= 20 && g.edges.length >= 40, `${g.nodes.length} nodes, ${junctions.length} junctions, ${g.edges.length} edges`);
+  // connected: BFS over edges from Kakkanad Junction
+  const origin = g.nodes.find((n) => Math.hypot(n.x, n.z) < 1);
+  const seen = new Set([origin]);
+  const queue = [origin];
+  while (queue.length) {
+    const n = queue.shift();
+    n.arms.forEach((a) => {
+      const other = a.dir > 0 ? a.edge.b : a.edge.a;
+      if (!seen.has(other)) {
+        seen.add(other);
+        queue.push(other);
+      }
+    });
+  }
+  check("road graph: every node reachable", seen.size === g.nodes.length, `${seen.size}/${g.nodes.length}`);
+  const badTrim = g.edges.filter((e) => !(e.trimA >= 0 && e.trimB >= 0 && e.trimA + e.trimB < e.len));
+  check("road graph: junction trims leave road", badTrim.length === 0, `${badTrim.length} bad`);
+  const q = g.nearest(3, 4, 100);
+  check("road graph: nearest road query", q && q.distance < 6, q ? `${q.road.name} ${q.distance.toFixed(2)} m` : "none");
+  // lanes keep left: travelling a->b, lane 0 lies to the left
+  const e0 = g.edges[0];
+  const p0 = g.lanePoint(e0, 1, e0.len / 2, g.laneOffset(e0, 0));
+  const c0 = g.pointAt(e0, e0.len / 2);
+  const leftDot = (p0.x - c0.x) * c0.dz - (p0.z - c0.z) * c0.dx;
+  check("lanes: traffic keeps left (India)", leftDot > 0, `offset ${leftDot.toFixed(2)} m`);
 }
 
 console.log(failures ? `\n${failures} CHECK(S) FAILED` : "\nALL UNIT CHECKS PASSED");

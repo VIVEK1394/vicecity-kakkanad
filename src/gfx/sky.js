@@ -53,13 +53,13 @@ class TimeOfDay {
     return `${displayH.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")} ${ampm}`;
   }
 
-  // World direction to the sun (+X east, +Y up, +Z north), local solar time = clock.
+  // World direction to the sun (+X east, +Y up, -Z north), local solar time = clock.
   sunDirection(target) {
     const H = ((this.hours - 12) / 24) * Math.PI * 2;
     const east = -Math.cos(DECLINATION) * Math.sin(H);
     const up = Math.sin(LATITUDE) * Math.sin(DECLINATION) + Math.cos(LATITUDE) * Math.cos(DECLINATION) * Math.cos(H);
     const north = Math.cos(LATITUDE) * Math.sin(DECLINATION) - Math.sin(LATITUDE) * Math.cos(DECLINATION) * Math.cos(H);
-    return target.set(east, up, north).normalize();
+    return target.set(east, up, -north).normalize(); // world: +X east, -Z north
   }
 }
 

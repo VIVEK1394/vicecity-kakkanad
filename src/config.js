@@ -1,120 +1,45 @@
 /**
  * GTA: VICE CITY KAKKANAD (ഗ്രാൻഡ് തെഫ്റ്റ് ഓട്ടോ: കാക്കനാട്)
  * PHASE 0: FROZEN SHARED CONFIGURATION
- * All values are immutable and frozen.
+ * All values are immutable and frozen. The map (roads, landmarks, bounds) is derived
+ * from src/data/kakkanad-geo.js: real Kakkanad names on real coordinates.
  */
 
+(function () {
+const GEO = window.KAKKANAD_GEO;
+const freezeAll = (list) => Object.freeze(list.map((o) => Object.freeze(o)));
+const lm = (id) => GEO.landmarks.find((l) => l.id === id);
+const at = (x, z) => Object.freeze({ x, z });
+
+let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+GEO.roads.concat(GEO.rivers).forEach((r) => r.points.forEach((p) => {
+  minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+  minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
+}));
+
 window.KAKKANAD_CONFIG = Object.freeze({
-  GEO_CENTER: Object.freeze({ lat: 10.0150, lon: 76.3500 }), // Collectorate / Kakkanad Jct
-  METRIC_SCALE: Object.freeze({ latToMeters: 111000, lonToMeters: 109300 }),
+  GEO_CENTER: Object.freeze({ lat: GEO.ORIGIN[0], lon: GEO.ORIGIN[1] }), // Kakkanad Junction (Civil Station)
+  WORLD_SCALE: GEO.SCALE, // distances compressed to 60%; widths and heights are real
+  NORTH: Object.freeze({ x: 0, z: -1 }), // +X east, -Z north (true map orientation)
 
   MAP_BOUNDS: Object.freeze({
-    minX: -1200, maxX: 1200, // 2.4 km east-west span
-    minZ: -1200, maxZ: 1200  // 2.4 km north-south span
+    minX: Math.floor(minX - 350), maxX: Math.ceil(maxX + 350),
+    minZ: Math.floor(minZ - 350), maxZ: Math.ceil(maxZ + 350)
   }),
 
-  KEY_LANDMARKS: Object.freeze([
-    Object.freeze({ id: "collectorate", name: "CIVIL STATION / COLLECTORATE", x: -220, z: 240, color: 0xff0055, type: "admin" }),
-    Object.freeze({ id: "bus_stand",   name: "KAKKANAD PRIVATE BUS STAND",   x: -70,  z: 160, color: 0xffb703, type: "transport" }),
-    Object.freeze({ id: "infopark",     name: "INFOPARK PHASE 1 (ATHULYA)",   x: 520,  z: -340, color: 0x00f0ff, type: "tech" }),
-    Object.freeze({ id: "smartcity",    name: "SMARTCITY KOCHI",              x: 880,  z: -520, color: 0x39ff14, type: "tech" }),
-    Object.freeze({ id: "edachira",     name: "EDACHIRA JUNCTION & THATTUKADA",x: 360, z: 120, color: 0xf58231, type: "food" }),
-    Object.freeze({ id: "csez",         name: "CSEZ SPECIAL ECONOMIC ZONE",   x: -480, z: -160, color: 0x9d4edd, type: "industry" }),
-    Object.freeze({ id: "watermetro",   name: "KAKKANAD WATER METRO JETTY",   x: 980,  z: 220,  color: 0x0077b6, type: "water" })
-  ]),
+  KEY_LANDMARKS: freezeAll(GEO.landmarks.map((l) => ({ id: l.id, name: l.name.toUpperCase(), short: l.short, x: l.x, z: l.z, color: l.radar, type: l.kind }))),
 
-  // Road network graph derived from real OpenStreetMap Kakkanad coordinates
-  ROAD_NETWORK: Object.freeze([
-    // 1. Seaport-Airport Road (SPAP Road) - Main 4-lane spine running North-South
-    Object.freeze({
-      id: "spap_road",
-      name: "Seaport-Airport Road",
-      width: 20.0,
-      lanes: 4,
-      isDualCarriageway: true,
-      points: Object.freeze([
-        Object.freeze({ x: -480, z: -1100 }),
-        Object.freeze({ x: -350, z: -600 }),
-        Object.freeze({ x: -200, z: -100 }),
-        Object.freeze({ x: -70,  z: 160 }),  // Kakkanad Junction
-        Object.freeze({ x: 50,   z: 550 }),
-        Object.freeze({ x: 180,  z: 1100 })
-      ])
-    }),
+  // Road network: real Kakkanad road names (see src/data/kakkanad-geo.js)
+  ROAD_NETWORK: freezeAll(GEO.roads.map((r) => ({
+    id: r.id, name: r.name, cls: r.cls, zone: r.zone,
+    width: r.width, lanes: r.lanes, isDualCarriageway: r.dual, dual: r.dual,
+    points: Object.freeze(r.points.map((p) => at(p.x, p.z)))
+  }))),
 
-    // 2. InfoPark Express Way - High-speed divided road connecting to Infopark & SmartCity
-    Object.freeze({
-      id: "infopark_exp",
-      name: "InfoPark Express Way",
-      width: 18.0,
-      lanes: 4,
-      isDualCarriageway: true,
-      points: Object.freeze([
-        Object.freeze({ x: -70,  z: 160 }),  // Junction from SPAP Road
-        Object.freeze({ x: 150,  z: 40 }),
-        Object.freeze({ x: 360,  z: 120 }),  // Edachira Jct
-        Object.freeze({ x: 520,  z: -340 }), // Infopark Phase 1 Athulya
-        Object.freeze({ x: 880,  z: -520 })  // SmartCity
-      ])
-    }),
+  LOCALITIES: freezeAll(GEO.localities.map((l) => ({ name: l.name, x: l.x, z: l.z }))),
 
-    // 3. Collectorate / Civil Station Road
-    Object.freeze({
-      id: "collectorate_rd",
-      name: "Collectorate Road",
-      width: 14.0,
-      lanes: 2,
-      isDualCarriageway: false,
-      points: Object.freeze([
-        Object.freeze({ x: -70,  z: 160 }),
-        Object.freeze({ x: -220, z: 240 }),  // Collectorate Complex
-        Object.freeze({ x: -450, z: 320 }),
-        Object.freeze({ x: -750, z: 420 })
-      ])
-    }),
-
-    // 4. Edachira - Infopark Back Road
-    Object.freeze({
-      id: "edachira_rd",
-      name: "Infopark-Edachira Road",
-      width: 12.0,
-      lanes: 2,
-      isDualCarriageway: false,
-      points: Object.freeze([
-        Object.freeze({ x: 360,  z: 120 }),
-        Object.freeze({ x: 420,  z: -80 }),
-        Object.freeze({ x: 520,  z: -340 })
-      ])
-    }),
-
-    // 5. Kadamprayar River Link / Water Metro Road
-    Object.freeze({
-      id: "watermetro_rd",
-      name: "Water Metro Riverside Road",
-      width: 12.0,
-      lanes: 2,
-      isDualCarriageway: false,
-      points: Object.freeze([
-        Object.freeze({ x: 360,  z: 120 }),
-        Object.freeze({ x: 620,  z: 180 }),
-        Object.freeze({ x: 980,  z: 220 })  // Water Metro Jetty
-      ])
-    }),
-
-    // 6. CSEZ Industrial Perimeter Road
-    Object.freeze({
-      id: "csez_rd",
-      name: "CSEZ Perimeter Road",
-      width: 12.0,
-      lanes: 2,
-      isDualCarriageway: false,
-      points: Object.freeze([
-        Object.freeze({ x: -200, z: -100 }),
-        Object.freeze({ x: -480, z: -160 }),
-        Object.freeze({ x: -700, z: -250 })
-      ])
-    })
-  ]),
+  // Where the player starts: the bus-stand side of Kakkanad-Pallikkara Road.
+  SPAWN: Object.freeze({ road: "kp_road", s: 58, side: 1 }),
 
   // Vehicle Archetypes & Handling Dynamics
   VEHICLE_ARCHETYPES: Object.freeze({
@@ -216,41 +141,52 @@ window.KAKKANAD_CONFIG = Object.freeze({
     })
   }),
 
-  // Story Missions
-  MISSIONS: Object.freeze([
-    Object.freeze({
+  // Story Missions (real destinations; time limits fit the 60% scale map)
+  MISSIONS: freezeAll([
+    {
       id: "mission_1",
       title: "THE 9:00 AM INFOPARK PUNCH-IN",
       client: "Techie Rahul",
-      briefing: "Urgent deployment code must reach Athulya Tower before punch-in! Take an Auto from Kakkanad Bus Stand, dodge Seaport-Airport Road traffic, and deliver it under 90 seconds!",
-      startPos: Object.freeze({ x: -70, z: 160 }), // Kakkanad Bus Stand
-      targetPos: Object.freeze({ x: 520, z: -340 }), // Infopark Athulya
-      timeLimit: 90,
+      briefing: "Deployment code must reach Athulya, Infopark before punch-in! Grab an auto at Kakkanad Bus Stand, take Kakkanad-Pallikkara Road to Athani and turn down Infopark Road.",
+      startPos: at(lm("bus_stand").x, lm("bus_stand").z),
+      targetPos: at(lm("infopark").x + 92, lm("infopark").z - 6),
+      timeLimit: 150,
       rewardCash: 1500,
       targetRadius: 25.0
-    }),
-    Object.freeze({
+    },
+    {
       id: "mission_2",
-      title: "AUTO RICKSHAW DRIFT HUSTLE",
+      title: "LAST BOAT FROM KAKKANAD",
       client: "Saji Chettan (Auto Driver Union)",
-      briefing: "IT crowd is stranded at Carnival Food Court with monsoon pouring! Pick up 3 techies and rush them to Edachira Junction without totaling the Auto!",
-      startPos: Object.freeze({ x: 520, z: -340 }),
-      targetPos: Object.freeze({ x: 360, z: 120 }), // Edachira
-      timeLimit: 75,
+      briefing: "Monsoon pour at Infopark and the techies will miss the last Water Metro to Vyttila! Rush them down Infopark Expressway, through Chittethukara to the Kakkanad Water Metro.",
+      startPos: at(lm("infopark").x + 92, lm("infopark").z - 6),
+      targetPos: at(lm("water_metro").x, lm("water_metro").z - 42),
+      timeLimit: 120,
       rewardCash: 2200,
-      targetRadius: 20.0
-    }),
-    Object.freeze({
+      targetRadius: 22.0
+    },
+    {
       id: "mission_3",
       title: "THE COLLECTORATE HEIST",
       client: "Anonymous Whistleblower",
-      briefing: "Classified land files located in Civil Station. Grab the briefcase, evade a guaranteed 3-Star Kerala Police pursuit, and cross Kadamprayar bridge to SmartCity!",
-      startPos: Object.freeze({ x: -220, z: 240 }), // Civil Station
-      targetPos: Object.freeze({ x: 880, z: -520 }), // SmartCity
-      timeLimit: 120,
+      briefing: "Classified land files are in the Civil Station. Grab the briefcase, survive a guaranteed 3-star Kerala Police pursuit and lose them at SmartCity Kochi!",
+      startPos: at(lm("civil_station").x, lm("civil_station").z),
+      targetPos: at(lm("smartcity").x + 40, lm("smartcity").z + 70),
+      timeLimit: 190,
       rewardCash: 5000,
       targetRadius: 25.0
-    })
+    },
+    {
+      id: "mission_4",
+      title: "ONAM AT THRIKKAKARA",
+      client: "Ammini Amma",
+      briefing: "Thrikkakara Appan's Onam festival starts at dusk and the pookkalam flowers are stuck at Kakkanad Junction! Race up Seaport-Airport Road past Bharata Mata College to the temple.",
+      startPos: at(22, -58),
+      targetPos: at(lm("temple").x + 62, lm("temple").z + 10),
+      timeLimit: 110,
+      rewardCash: 1800,
+      targetRadius: 22.0
+    }
   ]),
 
   // Radio Stations
@@ -260,3 +196,4 @@ window.KAKKANAD_CONFIG = Object.freeze({
     Object.freeze({ id: "infopark_chill", name: "INFOPARK LO-FI LOUNGE", genre: "Chillhop IT Beats" })
   ])
 });
+})();
