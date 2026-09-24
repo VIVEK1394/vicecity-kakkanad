@@ -19,6 +19,7 @@
       shadowMapSize: 1024,
       shadowSoft: false,
       shadowExtent: 45,
+      drawDistance: 620, // map cells beyond this are hidden (fogged anyway)
       ao: false,
       aoSamples: 0,
       bloomMips: 0,
@@ -39,6 +40,7 @@
       shadowMapSize: 2048,
       shadowSoft: true,
       shadowExtent: 70,
+      drawDistance: 1000,
       ao: true,
       aoSamples: 8,
       bloomMips: 4,
@@ -59,6 +61,7 @@
       shadowMapSize: 4096,
       shadowSoft: true,
       shadowExtent: 90,
+      drawDistance: 1300,
       ao: true,
       aoSamples: 12,
       bloomMips: 5,

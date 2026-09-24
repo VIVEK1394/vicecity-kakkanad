@@ -252,7 +252,7 @@ class CameraRig {
       this.pitchOffset = 0;
       const vel = player.velocity;
       const speed = Math.hypot(vel.x, vel.z);
-      targetYaw = this.yaw;
+      targetYaw = cut ? player.heading : this.yaw; // after a cut, start behind the player
       targetPitch = this.pitch;
       yawSmooth = 0.04;
       if (!mouseActive && speed > 1.5) {
@@ -299,7 +299,8 @@ class CameraRig {
     // Camera placement + collision (pull in instantly, ease back out).
     const cp = Math.cos(this.pitch);
     this._back.set(-Math.sin(this.yaw) * cp, Math.sin(this.pitch), -Math.cos(this.yaw) * cp).normalize();
-    const boxes = this.map.colliders.concat(this.vehicleBoxes(player, traffic, police));
+    const nearBoxes = this.map.collidersNear ? this.map.collidersNear(this.pivot, this.distance + 3) : this.map.colliders;
+    const boxes = nearBoxes.concat(this.vehicleBoxes(player, traffic, police));
     const hitT = this.raycastBoxes(this.pivot, this._back, this.distance + 0.4, boxes, 0.3);
     const allowed = Math.max(0.9, Math.min(this.distance, hitT - 0.35));
     if (cut || allowed < this.collisionDistance) {

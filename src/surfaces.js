@@ -204,10 +204,11 @@ class SurfaceManager {
         const i = (y * size + x) * 4;
         const n = GFX.fbm(x, y, size, 16, 3, 5);
         const s = GFX.fbm(x, y, size, 3, 3, 9);
-        const soil = Math.min(1, Math.max(0, (s - 0.56) / 0.12));
+        // bare laterite shows through in soft, sparse patches (strong spots repeat visibly)
+        const soil = 0.45 * Math.min(1, Math.max(0, (s - 0.6) / 0.2));
         const blade = 0.85 + rng() * 0.3;
-        const gr = [0.31 * blade, 0.42 * blade, 0.17 * blade];
-        const so = [0.47, 0.29, 0.19];
+        const gr = [0.29 * blade, 0.4 * blade, 0.16 * blade];
+        const so = [0.44, 0.31, 0.2];
         const k = 0.75 + 0.5 * n;
         img.data[i] = (gr[0] + (so[0] - gr[0]) * soil) * k * 255;
         img.data[i + 1] = (gr[1] + (so[1] - gr[1]) * soil) * k * 255;

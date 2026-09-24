@@ -37,7 +37,7 @@ class ViceCityGameEngine {
   init() {
     this.scene = new THREE.Scene();
     const aspect = window.innerWidth / window.innerHeight;
-    this.camera = new THREE.PerspectiveCamera(65, aspect, 0.3, 3000);
+    this.camera = new THREE.PerspectiveCamera(65, aspect, 0.3, 2200);
 
     // Renderer: linear lighting, ACES filmic tone mapping, sRGB output.
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
@@ -62,6 +62,7 @@ class ViceCityGameEngine {
 
     // Domain systems
     this.mapManager = new window.KakkanadMapManager(this.scene);
+    window.mapManager = this.mapManager;
     this.player = new window.PlayerController(this.scene, this.soundEngine);
     window.playerController = this.player;
 
@@ -210,15 +211,31 @@ class ViceCityGameEngine {
   }
 
   // Draw distance for vehicles and pedestrians: beyond it they are a few fogged pixels.
+  // Whole map cells beyond the tier's draw distance are hidden as well.
   cullDynamicObjects() {
     const cam = this.camera.position;
-    const vehicleRange2 = 350 * 350;
-    const pedRange2 = 160 * 160;
+    this.mapManager.batcher.updateVisibility(cam, (this.tier && this.tier.drawDistance) || 1100, this.sky.night);
+    const vehicleRange2 = 280 * 280;
+    const pedRange2 = 100 * 100;
+    const detailRange2 = 65 * 65;
+    // Beyond 65 m a moving vehicle drops its wheels and driver (several draw calls each).
+    const vehicleDetail = (v, near, aiDriven) => {
+      if (v._near === near && v._ai === aiDriven) return;
+      v._near = near;
+      v._ai = aiDriven;
+      const u = v.mesh.userData;
+      [u.frontWheels, u.rearWheels].forEach((list) => list && list.forEach((w) => (w.visible = near)));
+      if (aiDriven && u.driverAvatar) u.driverAvatar.visible = near;
+    };
     this.trafficManager.vehicles.forEach((v) => {
-      v.mesh.visible = v.isOccupied || v.mesh.position.distanceToSquared(cam) < vehicleRange2;
+      const d2 = v.mesh.position.distanceToSquared(cam);
+      v.mesh.visible = v.isOccupied || d2 < vehicleRange2;
+      vehicleDetail(v, v.isOccupied || v.parked || d2 < detailRange2, !!v.nav && !v.isOccupied);
     });
     this.policeManager.policeUnits.forEach((p) => {
-      p.mesh.visible = p.isActive && p.mesh.position.distanceToSquared(cam) < vehicleRange2;
+      const d2 = p.mesh.position.distanceToSquared(cam);
+      p.mesh.visible = p.isActive && d2 < vehicleRange2;
+      vehicleDetail(p, d2 < detailRange2, true);
     });
     const starter = this.player.starterVehicle;
     if (starter) starter.mesh.visible = starter.isOccupied || starter.mesh.position.distanceToSquared(cam) < vehicleRange2;
