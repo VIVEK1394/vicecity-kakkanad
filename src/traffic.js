@@ -35,6 +35,7 @@ class TrafficManager {
       for (let i = 0; i < pts.length - 1; i++) {
         const item = poolConfigs[(rIdx + i) % poolConfigs.length];
         const mesh = item.builder();
+        if (mesh.userData.driverAvatar) mesh.userData.driverAvatar.visible = true; // AI driver
         this.scene.add(mesh);
 
         const p1 = pts[i];
@@ -204,7 +205,7 @@ class TrafficManager {
 
         v.mesh.position.copy(v.position);
         v.mesh.rotation.y = v.heading;
-        window.vehicleModelFactory.updateWheelRotation(v.mesh, v.speed, delta);
+        if (v.mesh.visible) window.VehicleVisuals.animateAI(v, delta);
 
         // Vehicle on Player Collision
         const pDist = v.position.distanceTo(player.position);
@@ -262,6 +263,7 @@ class TrafficManager {
   handleVehicleCollision(trafficVehicle, player) {
     if (player.state === "IN_VEHICLE") {
       window.soundEngine.playCrash(1.0);
+      if (player.onVehicleImpact) player.onVehicleImpact(trafficVehicle);
       trafficVehicle.speed *= 0.5;
       if (Math.abs(player.speed) > 15.0 && window.policeManager) {
         window.policeManager.addCrimeHeat(window.KAKKANAD_CONFIG.WANTED.CRIME_HEAT.HIT_AND_RUN);

@@ -29,6 +29,7 @@ class KeralaPoliceManager {
     for (let i = 0; i < this.maxPoliceJeeps; i++) {
       const mesh = window.vehicleModelFactory.createPoliceJeepMesh();
       mesh.visible = false;
+      if (mesh.userData.driverAvatar) mesh.userData.driverAvatar.visible = true;
       this.scene.add(mesh);
 
       this.policeUnits.push({
@@ -124,7 +125,7 @@ class KeralaPoliceManager {
 
       p.mesh.position.copy(p.position);
       p.mesh.rotation.y = p.heading;
-      window.vehicleModelFactory.updateWheelRotation(p.mesh, p.speed, delta);
+      if (p.mesh.visible) window.VehicleVisuals.animateAI(p, delta);
 
       // Ram Player
       if (d < 3.8) {

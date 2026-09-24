@@ -240,6 +240,8 @@ class PlayerController {
       this.state = "IN_VEHICLE";
       this.speed = v.speed || 0;
       this.velocity.set(0, 0, 0);
+      if (!v.dynamics) v.dynamics = new window.VehicleDynamics(v);
+      v.dynamics.enter(v.speed || 0); // carjacking a moving car keeps its speed
 
       this.soundEngine.playVehicleDoor();
 
@@ -289,6 +291,17 @@ class PlayerController {
     this.position.copy(v.position).add(exitOffset);
     this.position.y = 0;
 
+    // The abandoned vehicle stays parked where it was left.
+    v.speed = 0;
+    if (v.dynamics) v.dynamics.reset();
+    v.aiMotion = null;
+    v.suspension = null;
+    if (v.mesh.userData.body) {
+      v.mesh.userData.body.rotation.set(0, 0, 0);
+      v.mesh.userData.body.position.set(0, 0, 0);
+    }
+    if (v.mesh.userData.tailMaterial) v.mesh.userData.tailMaterial.userData.glowBoost = 1;
+
     v.isOccupied = false;
     this.currentVehicle = null;
     this.state = "ON_FOOT";
@@ -312,49 +325,39 @@ class PlayerController {
     this.soundEngine.updateEngine(0, false);
   }
 
-  // --- 3. In-Vehicle Driving Physics ---
+  // --- 3. In-Vehicle Driving Physics (see vehicle-physics.js) ---
   updateInVehicle(delta, mapManager, trafficManager, policeManager) {
     const v = this.currentVehicle;
     const arch = v.archetype;
+    if (!v.dynamics) v.dynamics = new window.VehicleDynamics(v);
+    const dyn = v.dynamics;
 
-    // Acceleration & Braking
-    if (this.keys.up) {
-      this.speed = Math.min(arch.maxSpeed, this.speed + arch.accel * delta);
-    } else if (this.keys.down) {
-      if (this.speed > 0) {
-        this.speed = Math.max(0, this.speed - arch.brake * delta);
-      } else {
-        this.speed = Math.max(-10.0, this.speed - arch.accel * 0.6 * delta);
-      }
-    } else {
-      if (this.speed > 0) {
-        this.speed = Math.max(0, this.speed - 7.0 * delta);
-      } else if (this.speed < 0) {
-        this.speed = Math.min(0, this.speed + 7.0 * delta);
-      }
-    }
+    // Off the tarmac and sidewalks: less grip, more rolling drag.
+    const road = mapManager.getNearestRoadPoint(v.position);
+    const offRoad = road.distance > road.width * 0.5 + 3.6;
+    const surface = offRoad ? window.VEHICLE_SURFACE.OFF_ROAD : window.VEHICLE_SURFACE.ON_ROAD;
 
-    // Handbrake Drift
-    if (this.keys.jump && Math.abs(this.speed) > 5.0) {
-      this.speed = Math.max(0, this.speed - 14.0 * delta);
-    }
+    dyn.update(
+      delta,
+      {
+        throttle: this.keys.up ? 1 : 0,
+        brake: this.keys.down ? 1 : 0,
+        steer: (this.keys.left ? 1 : 0) - (this.keys.right ? 1 : 0),
+        handbrake: this.keys.jump
+      },
+      surface
+    );
 
-    // Steering
-    const steerDir = (this.keys.left ? 1 : 0) - (this.keys.right ? 1 : 0);
-    const turnRate = (arch.handling * 0.085) * (this.speed >= 0 ? 1 : -1);
-    v.heading += steerDir * turnRate * delta;
-
-    // Forward Motion Vector
-    const fwd = new THREE.Vector3(Math.sin(v.heading), 0, Math.cos(v.heading));
-    v.position.addScaledVector(fwd, this.speed * delta);
+    // The player mirrors the vehicle (police, traffic, HUD read these).
+    this.speed = v.speed;
+    this.velocity.copy(v.velocity);
     this.position.copy(v.position);
+    this.heading = v.heading;
 
-    // Synchronize 3D Vehicle Mesh
     v.mesh.position.copy(v.position);
     v.mesh.rotation.y = v.heading;
-
-    // Animate wheels
-    window.vehicleModelFactory.updateWheelRotation(v.mesh, this.speed, delta);
+    window.VehicleVisuals.update(v, delta, dyn.ax, dyn.ay, dyn.steer, dyn.u);
+    if (v.mesh.userData.tailMaterial) v.mesh.userData.tailMaterial.userData.glowBoost = dyn.braking ? 3.0 : 1.0;
 
     // Audio Engine Sync
     const rpmRatio = Math.min(Math.abs(this.speed) / arch.maxSpeed, 1.0);
@@ -366,6 +369,16 @@ class PlayerController {
     if (carSpeedEl) {
       carSpeedEl.textContent = Math.round(Math.abs(this.speed) * 3.6);
     }
+  }
+
+  // Crash with traffic: lose speed and get nudged off line (0.5 s cooldown per car).
+  onVehicleImpact(other) {
+    const v = this.currentVehicle;
+    const now = performance.now();
+    if (!v || !v.dynamics || (other.lastImpact && now - other.lastImpact < 500)) return;
+    other.lastImpact = now;
+    v.dynamics.applyImpact(0.6);
+    if (window.gameEngine && window.gameEngine.cameraRig) window.gameEngine.cameraRig.addShake(0.45);
   }
 
   takeDamage(amount) {

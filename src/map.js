@@ -590,6 +590,7 @@ class KakkanadMapManager {
     let bestPt = new THREE.Vector3();
     let bestHeading = 0;
     let bestRoadId = "spap_road";
+    let bestWidth = 20;
 
     this.roadMeshes.forEach((r) => {
       const v = new THREE.Vector3().subVectors(r.p2, r.p1);
@@ -607,10 +608,11 @@ class KakkanadMapManager {
         bestPt.copy(proj);
         bestHeading = Math.atan2(v.x, v.z);
         bestRoadId = r.roadId;
+        bestWidth = r.width;
       }
     });
 
-    return { point: bestPt, distance: bestDist, heading: bestHeading, roadId: bestRoadId };
+    return { point: bestPt, distance: bestDist, heading: bestHeading, roadId: bestRoadId, width: bestWidth };
   }
 
   getLandmarkPositions() {
