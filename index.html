@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>GTA: Vice City Kakkanad | ഗ്രാൻഡ് തെഫ്റ്റ് ഓട്ടോ</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Rajdhani:wght@600;700&family=Permanent+Marker&display=swap" rel="stylesheet">
+  <script>
+    window.onerror = function(msg, url, line, col, error) {
+      var d = document.createElement('div');
+      d.id = 'debug-error-box';
+      d.style.cssText = 'position:fixed;top:10px;left:10px;right:10px;background:#ff0044;color:#ffffff;z-index:999999;font-size:16px;font-family:monospace;padding:16px;border-radius:8px;box-shadow:0 8px 30px #000;';
+      d.textContent = 'RUNTIME ERROR [' + (url ? url.split('/').pop() : '') + ':' + line + ']: ' + msg + (error && error.stack ? '\n' + error.stack : '');
+      document.body.appendChild(d);
+    };
+  </script>
+</head>
+<body>
+  <!-- 3D WebGL Canvas Container -->
+  <div id="canvas-container"></div>
+
+  <!-- Screen FX Overlays (Wasted, Busted, Hit Flash) -->
+  <div id="hit-flash" class="screen-fx"></div>
+  <div id="siren-strobe" class="screen-fx"></div>
+
+  <!-- Combat Crosshair & Floating Combat Damage/Cash Popups -->
+  <div id="crosshair" class="crosshair"></div>
+  <div id="combat-popups"></div>
+
+  <!-- On-Foot Combat & Vehicle Key Guide -->
+  <div id="onfoot-hud" class="onfoot-hud">
+    <div class="hud-key-item"><kbd>L-CLICK</kbd> / <kbd>ENTER</kbd> <span class="key-act">PUNCH</span></div>
+    <div class="hud-key-item"><kbd>F</kbd> / <kbd>E</kbd> <span class="key-act">ENTER VEHICLE</span></div>
+    <div class="hud-key-item"><kbd>WASD</kbd> <span class="key-act">MOVE</span></div>
+    <div class="hud-key-item"><kbd>SHIFT</kbd> <span class="key-act">SPRINT</span></div>
+  </div>
+
+  <div id="wasted-banner" class="center-banner hidden">
+    <h1 class="wasted-text">WASTED</h1>
+    <p class="busted-sub">Admitted to Sunrise Hospital Kakkanad</p>
+  </div>
+  <div id="busted-banner" class="center-banner hidden">
+    <h1 class="busted-text">BUSTED</h1>
+    <p class="busted-sub">Remanded by Thrikkakara Police</p>
+  </div>
+
+  <!-- Vice City In-Game Heads-Up Display (HUD) -->
+  <div id="hud">
+    <!-- Top Right: Health, Armor, Cash & Wanted Stars -->
+    <div class="hud-top-right">
+      <!-- Wanted Stars (1 to 5) -->
+      <div class="wanted-container" id="wanted-container">
+        <span class="star" id="star-1">★</span>
+        <span class="star" id="star-2">★</span>
+        <span class="star" id="star-3">★</span>
+        <span class="star" id="star-4">★</span>
+        <span class="star" id="star-5">★</span>
+      </div>
+
+      <!-- Cash Counter -->
+      <div class="cash-box">
+        <span class="currency-symbol">₹</span>
+        <span class="cash-number" id="cash-val">0003500</span>
+      </div>
+
+      <!-- Health & Armor Bars -->
+      <div class="vital-bars">
+        <div class="vital-row health-row">
+          <span class="vital-icon">♥</span>
+          <div class="bar-outer">
+            <div class="bar-fill health-fill" id="health-bar" style="width: 100%;"></div>
+          </div>
+          <span class="vital-text" id="health-text">100</span>
+        </div>
+        <div class="vital-row armor-row">
+          <span class="vital-icon">🛡</span>
+          <div class="bar-outer">
+            <div class="bar-fill armor-fill" id="armor-bar" style="width: 100%;"></div>
+          </div>
+          <span class="vital-text" id="armor-text">100</span>
+        </div>
+      </div>
+
+      <!-- Digital Clock & Location -->
+      <div class="location-banner">
+        <span class="time-display" id="clock-display">08:45 AM</span>
+        <span class="location-name" id="current-location">SEAPORT-AIRPORT ROAD</span>
+      </div>
+    </div>
+
+    <!-- Top Left: Radio Station Banner (Slides Out on Change) -->
+    <div class="radio-banner" id="radio-banner">
+      <span class="radio-icon">📻</span>
+      <div class="radio-text">
+        <span class="radio-title" id="radio-station-name">KAKKANAD WAVE 80s</span>
+        <span class="radio-genre" id="radio-genre">VICE CITY SYNTHWAVE</span>
+      </div>
+    </div>
+
+    <!-- Center Top: Active Mission Objective Banner -->
+    <div class="mission-hud-banner hidden" id="mission-banner">
+      <div class="mission-tag">ACTIVE MISSION</div>
+      <div class="mission-title" id="hud-mission-title">THE 9:00 AM INFOPARK PUNCH-IN</div>
+      <div class="mission-objective" id="hud-mission-desc">Drive to Athulya Tower Infopark before punch-in!</div>
+      <div class="mission-timer" id="hud-mission-timer">⏱ 01:30</div>
+    </div>
+
+    <!-- Center Bottom: Subtitle Dialog Box -->
+    <div class="dialog-box hidden" id="dialog-box">
+      <span class="dialog-speaker" id="dialog-speaker">SAJI CHETTAN</span>:
+      <span class="dialog-text" id="dialog-text">"Pazhampori kazhichu kazhinjenkil vegam vandi edu chetta!"</span>
+    </div>
+
+    <!-- Bottom Left: Circular Radar Minimap -->
+    <div class="radar-cluster">
+      <div class="radar-outer-ring">
+        <canvas id="radar-canvas" width="180" height="180"></canvas>
+        <div class="compass-n">N</div>
+      </div>
+      <div class="interaction-prompt hidden" id="interaction-prompt">
+        [F / E] ENTER AUTO RICKSHAW
+      </div>
+    </div>
+
+    <!-- Bottom Right: Vehicle Telemetry & Speedometer (When In-Car) -->
+    <div class="vehicle-hud hidden" id="vehicle-hud">
+      <div class="vehicle-name" id="vehicle-name-display">KAKKANAD AUTO RICKSHAW</div>
+      <div class="speed-cluster">
+        <span class="speed-val" id="car-speed">0</span>
+        <span class="speed-unit">KM/H</span>
+      </div>
+      <div class="vehicle-hints">
+        <span>[H] HORN</span>
+        <span>[R] RADIO</span>
+        <span>[SPACE] HANDBRAKE</span>
+        <span>[F/E] EXIT</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Start Screen / Mission Selector Modal -->
+  <div id="start-modal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="retro-stamp">KOCHI METROPOLITAN CRIME EDITION</div>
+      <h1 class="logo-title">VICE CITY <span class="neon-pink">KAKKANAD</span></h1>
+      <div class="sub-logo">ഗ്രാൻഡ് തെഫ്റ്റ് ഓട്ടോ: കാക്കനാട്</div>
+
+      <div class="briefing-grid">
+        <div class="briefing-item">
+          <h3>🌴 REAL KAKKANAD 3D MAP</h3>
+          <p>Navigated from real <strong>OpenStreetMap / Google Maps</strong> data: Seaport-Airport Road, Infopark Expressway, Civil Station Collectorate, Edachira Junction, and Water Metro Jetty!</p>
+        </div>
+        <div class="briefing-item">
+          <h3>🛺 ICONIC KERALA VEHICLES</h3>
+          <p>Hijack and drive <strong>Kakkanad Auto Rickshaws</strong>, roaring <strong>Minnal Private Buses</strong>, <strong>Kerala Police Jeeps</strong>, and classic Ambassador cars!</p>
+        </div>
+      </div>
+
+      <div class="controls-guide">
+        <div class="ctrl-row"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or <kbd>Arrows</kbd> Walk / Steer</div>
+        <div class="ctrl-row"><kbd>L-CLICK</kbd> / <kbd>ENTER</kbd> Punch / Attack Pedestrians</div>
+        <div class="ctrl-row"><kbd>F</kbd> or <kbd>E</kbd> Enter / Carjack / Exit Vehicle</div>
+        <div class="ctrl-row"><kbd>SPACE</kbd> Jump (on foot) / Handbrake (driving)</div>
+        <div class="ctrl-row"><kbd>SHIFT</kbd> Sprint</div>
+        <div class="ctrl-row"><kbd>H</kbd> Horn (Auto Pom-Pom / Bus Air-Horn)</div>
+        <div class="ctrl-row"><kbd>R</kbd> Switch Radio Stations</div>
+        <div class="ctrl-row"><kbd>C</kbd> Toggle Camera View</div>
+      </div>
+
+      <div class="mission-select-row">
+        <button class="btn-primary" id="start-free-roam-btn" onclick="if(window.gameEngine) window.gameEngine.startGame(); else document.getElementById('start-modal').classList.add('hidden');">FREE ROAM KAKKANAD</button>
+        <button class="btn-secondary" id="start-mission-1-btn" onclick="if(window.gameEngine){ window.gameEngine.startGame(); window.missionEngine.startMission('mission_1'); } else document.getElementById('start-modal').classList.add('hidden');">MISSION: INFOPARK PUNCH-IN</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts: Local Three.js with CDN fallback, Config, then Domain Modules -->
+  <script src="libs/three.min.js"></script>
+  <script>
+    if (typeof THREE === 'undefined') {
+      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>');
+    }
+  </script>
+  <script src="src/config.js"></script>
+  <script src="src/postprocessing.js"></script>
+  <script src="src/surfaces.js"></script>
+  <script src="src/foliage.js"></script>
+  <script src="src/audio.js"></script>
+  <script src="src/models.js"></script>
+  <script src="src/asset-loader.js"></script>
+  <script src="src/map.js"></script>
+  <script src="src/player.js"></script>
+  <script src="src/traffic.js"></script>
+  <script src="src/police.js"></script>
+  <script src="src/missions.js"></script>
+  <script src="src/hud.js"></script>
+  <script src="src/main.js"></script>
+</body>
+</html>
