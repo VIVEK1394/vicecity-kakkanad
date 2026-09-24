@@ -25,16 +25,11 @@ class PlayerController {
     this.heading = 0; // Radians
     this.speed = 0;   // Forward speed when driving
 
-    // On-Foot Dynamics
-    this.walkSpeed = 6.0;    // m/s
-    this.sprintSpeed = 11.5; // m/s
+    // On-Foot Dynamics (see locomotion.js)
     this.verticalVelocity = 0;
     this.isGrounded = true;
-    this.walkAnimTimer = 0;
 
     // Melee Combat State
-    this.isPunching = false;
-    this.punchTimer = 0;
     this.punchCooldown = 0;
 
     // In-Vehicle Dynamics
@@ -44,6 +39,8 @@ class PlayerController {
     this.characterMesh = window.vehicleModelFactory.createCharacterMesh();
     this.characterMesh.position.copy(this.position);
     this.scene.add(this.characterMesh);
+    this.locomotion = new window.OnFootController(this);
+    this.gait = new window.ProceduralGait(this.characterMesh.userData);
 
     // Starter Auto Rickshaw spawned right next to player
     this.spawnStarterVehicle();
@@ -144,8 +141,7 @@ class PlayerController {
   performPunch() {
     if (this.punchCooldown > 0) return;
     this.punchCooldown = 0.35;
-    this.isPunching = true;
-    this.punchTimer = 0.22;
+    this.gait.punch();
 
     this.soundEngine.playPunchWhoosh();
 
@@ -170,87 +166,12 @@ class PlayerController {
 
   // --- 2. On-Foot Mechanics ---
   updateOnFoot(delta, mapManager, trafficManager) {
-    const moveSpeed = this.keys.sprint ? this.sprintSpeed : this.walkSpeed;
-    const moveDir = new THREE.Vector3();
-
-    // Camera-relative: W runs away from the camera, D towards screen right.
+    // Camera-relative locomotion with acceleration, turn inertia and sprint.
     const rig = window.gameEngine && window.gameEngine.cameraRig;
-    const yaw = rig ? rig.yaw : Math.PI;
-    const fwdInput = (this.keys.up ? 1 : 0) - (this.keys.down ? 1 : 0);
-    const sideInput = (this.keys.right ? 1 : 0) - (this.keys.left ? 1 : 0);
-    moveDir.set(
-      Math.sin(yaw) * fwdInput - Math.cos(yaw) * sideInput,
-      0,
-      Math.cos(yaw) * fwdInput + Math.sin(yaw) * sideInput
-    );
-
-    const isMoving = moveDir.lengthSq() > 0.01;
-
-    if (isMoving) {
-      moveDir.normalize();
-      this.heading = Math.atan2(moveDir.x, moveDir.z);
-
-      this.velocity.x = moveDir.x * moveSpeed;
-      this.velocity.z = moveDir.z * moveSpeed;
-
-      this.position.x += this.velocity.x * delta;
-      this.position.z += this.velocity.z * delta;
-
-      // Leg swing animation
-      this.walkAnimTimer += delta * (this.keys.sprint ? 14 : 9);
-      const swing = Math.sin(this.walkAnimTimer) * 0.45;
-      if (this.characterMesh.userData.leftLeg) {
-        this.characterMesh.userData.leftLeg.rotation.x = swing;
-        this.characterMesh.userData.rightLeg.rotation.x = -swing;
-        this.characterMesh.userData.leftArm.rotation.x = -swing;
-      }
-    } else {
-      this.velocity.set(0, 0, 0);
-      if (this.characterMesh.userData.leftLeg) {
-        this.characterMesh.userData.leftLeg.rotation.x = 0;
-        this.characterMesh.userData.rightLeg.rotation.x = 0;
-        this.characterMesh.userData.leftArm.rotation.x = 0;
-      }
-    }
-
-    // Punch Arm Swing Animation
-    if (this.isPunching) {
-      this.punchTimer -= delta;
-      if (this.characterMesh.userData.rightArmPivot) {
-        this.characterMesh.userData.rightArmPivot.rotation.x = -1.4; // Punch straight forward!
-      }
-      if (this.punchTimer <= 0) {
-        this.isPunching = false;
-        if (this.characterMesh.userData.rightArmPivot) {
-          this.characterMesh.userData.rightArmPivot.rotation.x = 0;
-        }
-      }
-    } else if (isMoving) {
-      const swing = Math.sin(this.walkAnimTimer) * 0.45;
-      if (this.characterMesh.userData.rightArmPivot) {
-        this.characterMesh.userData.rightArmPivot.rotation.x = swing;
-      }
-    } else {
-      if (this.characterMesh.userData.rightArmPivot) {
-        this.characterMesh.userData.rightArmPivot.rotation.x = 0;
-      }
-    }
-
-    // Jump Physics
-    if (this.keys.jump && this.isGrounded) {
-      this.verticalVelocity = 6.5;
-      this.isGrounded = false;
-    }
-
-    if (!this.isGrounded) {
-      this.verticalVelocity -= 18.0 * delta;
-      this.position.y += this.verticalVelocity * delta;
-      if (this.position.y <= 0) {
-        this.position.y = 0;
-        this.verticalVelocity = 0;
-        this.isGrounded = true;
-      }
-    }
+    const cameraYaw = rig ? rig.yaw : this.heading;
+    const speed = this.locomotion.update(delta, this.keys, cameraYaw);
+    if (this.locomotion.landImpact > 0) this.gait.land(this.locomotion.landImpact);
+    this.gait.update(delta, speed, this.locomotion.accelForward, this.locomotion.turnRate, this.isGrounded);
 
     // Sync Character Mesh
     this.characterMesh.position.copy(this.position);
@@ -318,6 +239,7 @@ class PlayerController {
       v.isOccupied = true;
       this.state = "IN_VEHICLE";
       this.speed = v.speed || 0;
+      this.velocity.set(0, 0, 0);
 
       this.soundEngine.playVehicleDoor();
 
@@ -370,6 +292,10 @@ class PlayerController {
     v.isOccupied = false;
     this.currentVehicle = null;
     this.state = "ON_FOOT";
+    this.heading = v.heading;
+    this.velocity.set(0, 0, 0);
+    this.verticalVelocity = 0;
+    this.isGrounded = true;
     this.characterMesh.visible = true;
     this.characterMesh.position.copy(this.position);
 
@@ -480,7 +406,9 @@ class PlayerController {
     this.position.set(-70, 0, 160);
     if (this.state === "IN_VEHICLE") {
       this.exitVehicle();
+      this.position.set(-70, 0, 160);
     }
+    this.velocity.set(0, 0, 0);
     this.characterMesh.position.copy(this.position);
     if (window.policeManager) window.policeManager.wantedLevel = 0;
   }

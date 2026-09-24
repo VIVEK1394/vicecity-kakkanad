@@ -207,9 +207,10 @@ class KeralaPoliceManager {
       this.wantedLevel = 0;
       this.crimeHeat = 0;
       this.deactivateAllPolice();
-      // Respawn at Collectorate Police Station
-      player.position.set(-220, 0, 240);
+      // Respawn at Collectorate Police Station (exit first: exiting places you by the car)
       if (player.state === "IN_VEHICLE") player.exitVehicle();
+      player.position.set(-220, 0, 240);
+      player.velocity.set(0, 0, 0);
     }, 3500);
   }
 }

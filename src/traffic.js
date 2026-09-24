@@ -79,24 +79,10 @@ class TrafficManager {
     ];
 
     sidewalkSpots.forEach((spot, idx) => {
-      const group = new THREE.Group();
       const col = pedColors[idx % pedColors.length];
-
-      // Torso
-      const torso = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.65, 0.28), new THREE.MeshStandardMaterial({ color: col }));
-      torso.position.y = 1.0;
-
-      // Head
-      const head = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.3, 0.26), new THREE.MeshStandardMaterial({ color: 0xd4a373 }));
-      head.position.y = 1.5;
-
-      // Lungi / Pants
-      const lower = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.7, 0.26), new THREE.MeshStandardMaterial({ color: idx % 2 === 0 ? 0xf8f9fa : 0x1d3557 }));
-      lower.position.y = 0.35;
-
-      group.add(torso);
-      group.add(head);
-      group.add(lower);
+      // White mundu/lungi or dark trousers
+      const lungi = idx % 2 === 0;
+      const group = window.vehicleModelFactory.createPedestrianMesh(col, lungi ? 0xeeeee6 : 0x1d3557, lungi);
       group.position.set(spot.x, 0, spot.z);
       this.scene.add(group);
 
@@ -110,7 +96,8 @@ class TrafficManager {
         health: 50, // 1 punch to knockout & cash drop
         isKnockedOut: false,
         isPanicked: false,
-        panicTimer: 0
+        panicTimer: 0,
+        gait: new window.PedestrianGait(group.userData)
       });
     });
   }
@@ -245,6 +232,7 @@ class TrafficManager {
 
       ped.group.position.copy(ped.position);
       ped.group.rotation.y = ped.walkDir > 0 ? Math.PI / 2 : -Math.PI / 2;
+      if (ped.group.visible) ped.gait.update(delta, speed);
 
       // Vehicular Manslaughter Check (Player drives into pedestrian)
       if (player.state === "IN_VEHICLE" && Math.abs(player.speed) > 6.0) {

@@ -554,117 +554,193 @@ class VehicleModelFactory {
     return group;
   }
 
-  // --- 7. TOMMY VERCETTI CHARACTER (WITH PUNCH COMBAT) ---
+  // --- 7. TOMMY VERCETTI CHARACTER: JOINTED RIG FOR PROCEDURAL ANIMATION ---
+  // Root at the feet, facing +Z. Joints: hips > thighs > knees, hips > spine > head,
+  // spine > shoulders > elbows. Negative x rotation swings a limb forward.
   createCharacterMesh() {
     const group = new THREE.Group();
     group.name = "playerCharacter";
 
     const skinMat = new THREE.MeshStandardMaterial({ color: 0xb98356, roughness: 0.55 });
-    const shirtMat = new THREE.MeshStandardMaterial({
-      map: this.shirtTexture,
-      roughness: 0.8,
-      metalness: 0.0
-    });
-    const jeansMat = new THREE.MeshStandardMaterial({
-      map: this.jeansTexture,
-      roughness: 0.9,
-      metalness: 0.0
-    });
-    const hairMat = new THREE.MeshStandardMaterial({ color: 0x1a0f07, roughness: 0.55 }); // Dark brown 80s hair
+    const shirtMat = new THREE.MeshStandardMaterial({ map: this.shirtTexture, roughness: 0.8, metalness: 0.0 });
+    const jeansMat = new THREE.MeshStandardMaterial({ map: this.jeansTexture, roughness: 0.9, metalness: 0.0 });
+    const hairMat = new THREE.MeshStandardMaterial({ color: 0x1a0f07, roughness: 0.55 });
     const shoeMat = new THREE.MeshStandardMaterial({ color: 0xe9ebed, roughness: 0.5 });
     const goldMat = new THREE.MeshStandardMaterial({ color: 0xd8ab4a, metalness: 1.0, roughness: 0.25 });
+    const lensMat = new THREE.MeshStandardMaterial({ color: 0x080808, roughness: 0.05, metalness: 0.6 });
 
-    // Torso (Authentic Vice City Tropical Hawaiian Shirt)
-    const torsoGeo = new THREE.BoxGeometry(0.55, 0.68, 0.32);
-    const torso = new THREE.Mesh(torsoGeo, shirtMat);
-    torso.position.y = 1.06;
-    torso.castShadow = true;
-    torso.receiveShadow = true;
-    group.add(torso);
+    const part = (parent, geo, mat, x, y, z) => {
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(x, y, z);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      parent.add(m);
+      return m;
+    };
+    const joint = (parent, x, y, z) => {
+      const j = new THREE.Group();
+      j.position.set(x, y, z);
+      parent.add(j);
+      return j;
+    };
 
-    // Head
-    const headGeo = new THREE.BoxGeometry(0.28, 0.32, 0.28);
-    const head = new THREE.Mesh(headGeo, skinMat);
-    head.position.y = 1.56;
-    head.castShadow = true;
-    group.add(head);
+    const hipHeight = 0.95;
+    const hips = joint(group, 0, hipHeight, 0);
+    part(hips, new THREE.BoxGeometry(0.36, 0.2, 0.22), jeansMat, 0, 0, 0);
 
-    // 80s Styled Swept-Back Hair
-    const hairGeo = new THREE.BoxGeometry(0.32, 0.12, 0.32);
-    const hair = new THREE.Mesh(hairGeo, hairMat);
-    hair.position.set(0, 1.72, -0.02);
-    hair.castShadow = true;
-    group.add(hair);
+    // Legs
+    const legs = {};
+    [["L", -0.1], ["R", 0.1]].forEach(([side, x]) => {
+      const thigh = joint(hips, x, -0.04, 0);
+      part(thigh, new THREE.BoxGeometry(0.16, 0.46, 0.18), jeansMat, 0, -0.23, 0);
+      const knee = joint(thigh, 0, -0.46, 0);
+      part(knee, new THREE.BoxGeometry(0.14, 0.42, 0.16), jeansMat, 0, -0.21, 0);
+      part(knee, new THREE.BoxGeometry(0.15, 0.1, 0.28), shoeMat, 0, -0.4, 0.05);
+      legs["thigh" + side] = thigh;
+      legs["knee" + side] = knee;
+    });
 
-    const hairBackGeo = new THREE.BoxGeometry(0.30, 0.22, 0.10);
-    const hairBack = new THREE.Mesh(hairBackGeo, hairMat);
-    hairBack.position.set(0, 1.58, -0.12);
-    group.add(hairBack);
+    // Torso (Hawaiian shirt), gold chain, head with swept-back hair and aviators
+    const spine = joint(hips, 0, 0.08, 0);
+    part(spine, new THREE.BoxGeometry(0.46, 0.52, 0.26), shirtMat, 0, 0.26, 0);
+    const head = joint(spine, 0, 0.54, 0);
+    part(head, new THREE.BoxGeometry(0.1, 0.06, 0.1), skinMat, 0, 0.02, 0); // neck
+    part(head, new THREE.BoxGeometry(0.24, 0.27, 0.25), skinMat, 0, 0.17, 0);
+    part(head, new THREE.BoxGeometry(0.27, 0.09, 0.28), hairMat, 0, 0.32, -0.01);
+    part(head, new THREE.BoxGeometry(0.26, 0.18, 0.08), hairMat, 0, 0.22, -0.11);
+    part(head, new THREE.BoxGeometry(0.23, 0.07, 0.03), goldMat, 0, 0.2, 0.13);
+    part(head, new THREE.BoxGeometry(0.21, 0.055, 0.035), lensMat, 0, 0.2, 0.135);
 
-    // Gold-Rimmed Aviator Sunglasses
-    const glassFrameGeo = new THREE.BoxGeometry(0.26, 0.09, 0.04);
-    const glassFrame = new THREE.Mesh(glassFrameGeo, goldMat);
-    glassFrame.position.set(0, 1.60, 0.15);
-    group.add(glassFrame);
-
-    const glassLensGeo = new THREE.BoxGeometry(0.23, 0.07, 0.05);
-    const glassLens = new THREE.Mesh(glassLensGeo, new THREE.MeshStandardMaterial({ color: 0x080808, roughness: 0.05, metalness: 0.6 }));
-    glassLens.position.set(0, 1.60, 0.155);
-    group.add(glassLens);
-
-    // Legs (Denim Jeans)
-    const legGeo = new THREE.BoxGeometry(0.22, 0.72, 0.24);
-    const leftLeg = new THREE.Mesh(legGeo, jeansMat);
-    leftLeg.position.set(-0.15, 0.36, 0);
-    leftLeg.castShadow = true;
-    const rightLeg = new THREE.Mesh(legGeo, jeansMat);
-    rightLeg.position.set(0.15, 0.36, 0);
-    rightLeg.castShadow = true;
-    group.add(leftLeg);
-    group.add(rightLeg);
-
-    // White 80s Sneakers
-    const shoeGeo = new THREE.BoxGeometry(0.22, 0.12, 0.34);
-    const leftShoe = new THREE.Mesh(shoeGeo, shoeMat);
-    leftShoe.position.set(-0.15, 0.06, 0.04);
-    leftShoe.castShadow = true;
-    const rightShoe = leftShoe.clone();
-    rightShoe.position.x = 0.15;
-    group.add(leftShoe);
-    group.add(rightShoe);
-
-    // Left Arm with Gold Watch
-    const armGeo = new THREE.BoxGeometry(0.14, 0.6, 0.14);
-    const leftArm = new THREE.Mesh(armGeo, skinMat);
-    leftArm.position.set(-0.38, 1.0, 0);
-    leftArm.castShadow = true;
-    group.add(leftArm);
-
-    // Gold Watch on Left Wrist
-    const watchGeo = new THREE.BoxGeometry(0.16, 0.05, 0.16);
-    const watch = new THREE.Mesh(watchGeo, goldMat);
-    watch.position.set(-0.38, 0.76, 0);
-    group.add(watch);
-
-    // Right Arm (Punch Combat Pivot)
-    const rightArmPivot = new THREE.Group();
-    rightArmPivot.position.set(0.38, 1.25, 0);
-    const rightArm = new THREE.Mesh(armGeo, skinMat);
-    rightArm.position.set(0, -0.25, 0);
-    rightArm.castShadow = true;
-    rightArmPivot.add(rightArm);
-    group.add(rightArmPivot);
+    // Arms: short sleeves, bare forearms, gold watch on the left wrist
+    const arms = {};
+    [["L", -0.3], ["R", 0.3]].forEach(([side, x]) => {
+      const shoulder = joint(spine, x, 0.47, 0);
+      part(shoulder, new THREE.BoxGeometry(0.13, 0.28, 0.14), shirtMat, 0, -0.13, 0);
+      const elbow = joint(shoulder, 0, -0.28, 0);
+      part(elbow, new THREE.BoxGeometry(0.1, 0.26, 0.1), skinMat, 0, -0.13, 0);
+      part(elbow, new THREE.BoxGeometry(0.09, 0.09, 0.1), skinMat, 0, -0.3, 0);
+      if (side === "L") part(elbow, new THREE.BoxGeometry(0.12, 0.04, 0.12), goldMat, 0, -0.22, 0);
+      arms["shoulder" + side] = shoulder;
+      arms["elbow" + side] = elbow;
+    });
 
     group.userData = {
       type: "CHARACTER",
-      leftLeg: leftLeg,
-      rightLeg: rightLeg,
-      leftArm: leftArm,
-      rightArm: rightArm,
-      rightArmPivot: rightArmPivot
+      hipHeight,
+      hips,
+      spine,
+      head,
+      thighL: legs.thighL,
+      thighR: legs.thighR,
+      kneeL: legs.kneeL,
+      kneeR: legs.kneeR,
+      shoulderL: arms.shoulderL,
+      shoulderR: arms.shoulderR,
+      elbowL: arms.elbowL,
+      elbowR: arms.elbowR,
+      // aliases used by older code
+      leftLeg: legs.thighL,
+      rightLeg: legs.thighR,
+      leftArm: arms.shoulderL,
+      rightArm: arms.shoulderR,
+      rightArmPivot: arms.shoulderR
     };
 
+    this.mergeJointMeshes(group);
     return group;
+  }
+
+  // --- 8. KAKKANAD PEDESTRIAN: light jointed rig (body, two legs, two arms) ---
+  // One shared vertex-coloured material; rigid parts merged => 5 draw calls per person.
+  coloredBox(w, h, d, x, y, z, hex) {
+    const g = new THREE.BoxGeometry(w, h, d);
+    g.translate(x, y, z);
+    const c = GFX.color(hex);
+    const colors = new Float32Array(g.attributes.position.count * 3);
+    for (let i = 0; i < colors.length; i += 3) {
+      colors[i] = c.r;
+      colors[i + 1] = c.g;
+      colors[i + 2] = c.b;
+    }
+    g.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+    return g;
+  }
+
+  createPedestrianMesh(shirtHex, lowerHex, wearsLungi) {
+    if (!this.pedMaterial) {
+      this.pedMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 });
+      this.pedMaterial.userData.linear = true; // vertex colours are already linear
+    }
+    const mat = this.pedMaterial;
+    const skinHex = 0x9a6a45;
+    const merge = (geos) => THREE.BufferGeometryUtils.mergeBufferGeometries(geos, false);
+    const mesh = (geo, parent) => {
+      const m = new THREE.Mesh(geo, mat);
+      m.castShadow = true;
+      parent.add(m);
+      return m;
+    };
+
+    const group = new THREE.Group();
+    group.name = "pedestrian";
+    const bodyHeight = 0.9;
+    const body = new THREE.Group();
+    body.position.y = bodyHeight;
+    group.add(body);
+    const bodyParts = [
+      this.coloredBox(0.44, 0.56, 0.25, 0, 0.3, 0, shirtHex),
+      this.coloredBox(0.23, 0.26, 0.24, 0, 0.74, 0, skinHex),
+      this.coloredBox(0.25, 0.08, 0.26, 0, 0.89, -0.01, 0x151008),
+    ];
+    if (wearsLungi) bodyParts.push(this.coloredBox(0.46, 0.5, 0.3, 0, -0.2, 0, lowerHex));
+    mesh(merge(bodyParts), body);
+
+    const legs = [-0.1, 0.1].map((x) => {
+      const hip = new THREE.Group();
+      hip.position.set(x, bodyHeight, 0);
+      group.add(hip);
+      mesh(this.coloredBox(0.15, 0.86, 0.17, 0, -0.43, 0, wearsLungi ? skinHex : lowerHex), hip);
+      return hip;
+    });
+    const arms = [-0.29, 0.29].map((x) => {
+      const shoulder = new THREE.Group();
+      shoulder.position.set(x, 0.54, 0);
+      body.add(shoulder);
+      mesh(this.coloredBox(0.11, 0.56, 0.12, 0, -0.26, 0, skinHex), shoulder);
+      return shoulder;
+    });
+
+    group.userData = { type: "PEDESTRIAN", body, bodyHeight, legL: legs[0], legR: legs[1], armL: arms[0], armR: arms[1] };
+    return group;
+  }
+
+  // Merge a joint's direct mesh children that share a material (keeps the rig, fewer draws).
+  mergeJointMeshes(root) {
+    const joints = [];
+    root.traverse((o) => {
+      if (!o.isMesh && o.children.some((c) => c.isMesh)) joints.push(o);
+    });
+    joints.forEach((joint) => {
+      const byMat = new Map();
+      joint.children.filter((c) => c.isMesh).forEach((m) => {
+        if (!byMat.has(m.material)) byMat.set(m.material, []);
+        byMat.get(m.material).push(m);
+      });
+      byMat.forEach((meshes, material) => {
+        if (meshes.length < 2) return;
+        const geos = meshes.map((m) => {
+          m.updateMatrix();
+          const g = m.geometry.clone();
+          g.applyMatrix4(m.matrix);
+          return g;
+        });
+        const merged = new THREE.Mesh(THREE.BufferGeometryUtils.mergeBufferGeometries(geos, false), material);
+        merged.castShadow = true;
+        merged.receiveShadow = true;
+        meshes.forEach((m) => joint.remove(m));
+        joint.add(merged);
+      });
+    });
   }
 
   // --- Driver Avatar for Cockpit ---
