@@ -38,7 +38,8 @@ class AssetLoader {
       case "AUTO_RICKSHAW":
         return this.factory.createAutoRickshawMesh();
       case "PRIVATE_BUS":
-        return this.factory.createPrivateBusMesh();
+      case "KERALA_BUS":
+        return this.factory.createKeralaBusMesh();
       case "POLICE_JEEP":
         return this.factory.createPoliceJeepMesh();
       case "AMBASSADOR":

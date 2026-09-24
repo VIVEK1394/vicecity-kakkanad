@@ -151,7 +151,7 @@
       <div class="briefing-grid">
         <div class="briefing-item">
           <h3>🌴 REAL KAKKANAD 3D MAP</h3>
-          <p>Navigated from real <strong>OpenStreetMap / Google Maps</strong> data: Seaport-Airport Road, Infopark Expressway, Civil Station Collectorate, Edachira Junction, and Water Metro Jetty!</p>
+          <p>Real roads and places on their real coordinates: <strong>Seaport-Airport Road, Civil Line Road, Infopark Expressway</strong>, Civil Station, Infopark, SmartCity, Thrikkakara Temple, the Water Metro and the Metro Pink Line. Buildings are imagined. Walk into a yellow <strong>M</strong> to start a mission.</p>
         </div>
         <div class="briefing-item">
           <h3>🛺 ICONIC KERALA VEHICLES</h3>
@@ -167,7 +167,19 @@
         <div class="ctrl-row"><kbd>SHIFT</kbd> Sprint</div>
         <div class="ctrl-row"><kbd>H</kbd> Horn (Auto Pom-Pom / Bus Air-Horn)</div>
         <div class="ctrl-row"><kbd>R</kbd> Switch Radio Stations</div>
+        <div class="ctrl-row"><kbd>MOUSE</kbd> Look around (click to capture, <kbd>ESC</kbd> to release; or hold right button)</div>
         <div class="ctrl-row"><kbd>C</kbd> Toggle Camera View</div>
+        <div class="ctrl-row"><kbd>G</kbd> Graphics Quality &nbsp; <kbd>P</kbd> Performance Overlay</div>
+      </div>
+
+      <div class="quality-row">
+        <span class="quality-label">GRAPHICS</span>
+        <div class="quality-options" role="group" aria-label="Graphics quality">
+          <button type="button" class="q-btn" data-q="auto">AUTO</button>
+          <button type="button" class="q-btn" data-q="low">LOW</button>
+          <button type="button" class="q-btn" data-q="medium">MEDIUM</button>
+          <button type="button" class="q-btn" data-q="high">HIGH</button>
+        </div>
       </div>
 
       <div class="mission-select-row">
@@ -177,13 +189,25 @@
     </div>
   </div>
 
-  <!-- Scripts: Local Three.js with CDN fallback, Config, then Domain Modules -->
+  <!-- Graphics toast & performance overlay (P) -->
+  <div id="gfx-toast" class="gfx-toast hidden"></div>
+  <div id="perf-overlay" class="perf-overlay hidden"></div>
+
+  <!-- Scripts: Local Three.js with CDN fallback, graphics core, Config, then Domain Modules -->
   <script src="libs/three.min.js"></script>
   <script>
     if (typeof THREE === 'undefined') {
       document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>');
     }
   </script>
+  <script src="libs/three-examples/BufferGeometryUtils.js"></script>
+  <script src="libs/three-examples/FXAAShader.js"></script>
+  <script src="src/gfx/materials.js"></script>
+  <script src="src/gfx/quality.js"></script>
+  <script src="src/gfx/batch.js"></script>
+  <script src="src/gfx/sky.js"></script>
+  <script src="src/gfx/effects.js"></script>
+  <script src="src/data/kakkanad-geo.js"></script>
   <script src="src/config.js"></script>
   <script src="src/postprocessing.js"></script>
   <script src="src/surfaces.js"></script>
@@ -191,12 +215,17 @@
   <script src="src/audio.js"></script>
   <script src="src/models.js"></script>
   <script src="src/asset-loader.js"></script>
+  <script src="src/roadgraph.js"></script>
+  <script src="src/citygen.js"></script>
   <script src="src/map.js"></script>
+  <script src="src/vehicle-physics.js"></script>
+  <script src="src/locomotion.js"></script>
   <script src="src/player.js"></script>
   <script src="src/traffic.js"></script>
   <script src="src/police.js"></script>
   <script src="src/missions.js"></script>
   <script src="src/hud.js"></script>
+  <script src="src/camera.js"></script>
   <script src="src/main.js"></script>
 </body>
 </html>

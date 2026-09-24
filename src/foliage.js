@@ -3,46 +3,79 @@
  * DOMAIN: ALPHA-CUTOUT TROPICAL FOLIAGE ENGINE (Subagent β)
  * Features high-resolution alpha-cutout textures for coconut palm fronds,
  * curved palm trunks, clustered coconuts, and lush tropical undergrowth.
+ * Leaves are alpha-tested in the opaque pass (no sorting), sway in the wind in the
+ * vertex shader (shadows sway too), and everything is merged by the StaticBatcher.
  */
+
+// Shared wind vertex patch. Amplitude is a per-material uniform (same program for all).
+const FOLIAGE_WIND_ON_BEFORE_COMPILE = function (shader) {
+  GFX.injectUniforms(shader);
+  shader.uniforms.gfxWindAmp = { value: this.userData.windAmp || 0 };
+  shader.vertexShader =
+    "uniform float gfxTime;\nuniform float gfxWindAmp;\n" +
+    shader.vertexShader.replace(
+      "#include <begin_vertex>",
+      [
+        "#include <begin_vertex>",
+        "{",
+        "  vec3 gfxWp = ( modelMatrix * vec4( position, 1.0 ) ).xyz;",
+        "  float gfxPh = gfxTime * 1.7 + gfxWp.x * 0.13 + gfxWp.z * 0.09;",
+        "  float gfxTip = uv.y * uv.y;",
+        "  transformed += vec3( sin( gfxPh ), 0.4 * sin( gfxPh * 1.9 ), cos( gfxPh * 0.87 ) ) * ( gfxWindAmp * gfxTip );",
+        "}",
+      ].join("\n")
+    );
+};
 
 class FoliageManager {
   constructor(scene) {
     this.scene = scene;
+    this.rng = GFX.rng(2024); // deterministic groves (stable screenshots)
     this.frondTexture = this.generatePalmFrondAlphaTexture();
     this.trunkTexture = this.generateBarkTexture();
     this.bananaLeafTexture = this.generateBananaLeafTexture();
 
     // Reusable Foliage Materials with Alpha Cutout
-    this.frondMaterial = new THREE.MeshStandardMaterial({
-      map: this.frondTexture,
-      alphaTest: 0.45,
-      transparent: true,
-      side: THREE.DoubleSide,
-      roughness: 0.65,
-      metalness: 0.1
-    });
+    this.frondMaterial = this.createLeafMaterial(this.frondTexture, 0.22, 0.7);
 
     this.trunkMaterial = new THREE.MeshStandardMaterial({
       map: this.trunkTexture,
-      roughness: 0.85,
-      metalness: 0.05
+      roughness: 0.9,
+      metalness: 0.0
     });
 
     this.coconutMaterial = new THREE.MeshStandardMaterial({
-      color: 0x4a5d23, // Unripe coconut green with amber tones
-      roughness: 0.75,
-      metalness: 0.1
+      color: 0x55652a, // Unripe coconut green with amber tones
+      roughness: 0.6,
+      metalness: 0.0
     });
 
-    this.bananaMaterial = new THREE.MeshStandardMaterial({
-      map: this.bananaLeafTexture,
-      alphaTest: 0.45,
-      transparent: true,
-      side: THREE.DoubleSide,
-      roughness: 0.6
-    });
+    this.bananaMaterial = this.createLeafMaterial(this.bananaLeafTexture, 0.1, 0.6);
 
     this.trees = [];
+  }
+
+  createLeafMaterial(texture, windAmp, roughness) {
+    const mat = new THREE.MeshStandardMaterial({
+      map: texture,
+      alphaTest: 0.45,
+      side: THREE.DoubleSide,
+      roughness: roughness,
+      metalness: 0.0
+    });
+    mat.userData.windAmp = windAmp;
+    mat.onBeforeCompile = FOLIAGE_WIND_ON_BEFORE_COMPILE;
+
+    const depth = new THREE.MeshDepthMaterial({
+      depthPacking: THREE.RGBADepthPacking,
+      map: texture,
+      alphaTest: 0.45,
+      side: THREE.DoubleSide
+    });
+    depth.userData.windAmp = windAmp;
+    depth.onBeforeCompile = FOLIAGE_WIND_ON_BEFORE_COMPILE;
+    mat.userData.depthMaterial = depth;
+    return mat;
   }
 
   // --- 1. PROCEDURAL 512x512 ALPHA-CUTOUT PALM FROND TEXTURE ---
@@ -206,7 +239,7 @@ class FoliageManager {
     const segments = 7;
     const segHeight = height / segments;
     let currentPos = new THREE.Vector3(0, 0, 0);
-    const leanAngle = (Math.random() - 0.5) * 0.35;
+    const leanAngle = (this.rng() - 0.5) * 0.35;
     const leanDir = new THREE.Vector2(Math.sin(leanAngle), Math.cos(leanAngle)).normalize();
 
     for (let s = 0; s < segments; s++) {
@@ -247,7 +280,7 @@ class FoliageManager {
         crownPos.y - 0.35,
         crownPos.z + Math.sin(angle) * 0.45
       );
-      nut.rotation.x = Math.random() * 0.4;
+      nut.rotation.x = this.rng() * 0.4;
       nut.castShadow = true;
       palmGroup.add(nut);
     }
@@ -255,11 +288,11 @@ class FoliageManager {
     // C. 14 Cascading Alpha-Cutout Fronds
     const frondCount = 14;
     for (let f = 0; f < frondCount; f++) {
-      const azimuth = (f / frondCount) * Math.PI * 2 + (Math.random() * 0.2);
+      const azimuth = (f / frondCount) * Math.PI * 2 + (this.rng() * 0.2);
       const droopTier = (f % 3); // 3 tiers of elevation & droop
 
       // Curved Frond Geometry (Bent downward along Y)
-      const frondLength = 4.8 + Math.random() * 0.8;
+      const frondLength = 4.8 + this.rng() * 0.8;
       const frondWidth = 1.5;
       const frondGeo = new THREE.PlaneGeometry(frondWidth, frondLength, 4, 8);
 
@@ -267,7 +300,9 @@ class FoliageManager {
       const posAttr = frondGeo.attributes.position;
       for (let p = 0; p < posAttr.count; p++) {
         const yVal = posAttr.getY(p); // -length/2 to +length/2
-        const normY = (yVal + frondLength * 0.5) / frondLength; // 0 (stem) to 1 (tip)
+        // 0 (stem) to 1 (tip). Clamped: float error can make the stem row a tiny
+        // negative, and Math.pow(negative, 2.2) is NaN (broke ~half of all fronds).
+        const normY = Math.min(1, Math.max(0, (yVal + frondLength * 0.5) / frondLength));
         const bend = Math.pow(normY, 2.2) * (1.8 + droopTier * 0.4);
         posAttr.setZ(p, -bend);
       }
@@ -326,7 +361,6 @@ class FoliageManager {
 
   // --- 6. POPULATE PALM GROVES ACROSS KAKKANAD ---
   populateMapFoliage(mapManager) {
-    const bounds = mapManager.config.MAP_BOUNDS;
 
     // Coconut Palms along Seaport-Airport Road Median & Sidewalks
     const spapSpots = [
@@ -350,8 +384,8 @@ class FoliageManager {
     spapSpots.forEach((spot, idx) => {
       const palm = this.createCoconutPalm(13 + (idx % 4) * 1.5, 1.5 + (idx % 3) * 0.4);
       palm.position.set(spot.x, 0, spot.z);
-      this.scene.add(palm);
-      this.trees.push(palm);
+      mapManager.batcher.add(palm);
+      this.trees.push(palm.position.clone());
     });
 
     // Banana Plants around Thattukadas & Riverbanks
@@ -364,8 +398,8 @@ class FoliageManager {
     bananaSpots.forEach((spot) => {
       const banana = this.createBananaPlant();
       banana.position.set(spot.x, 0, spot.z);
-      this.scene.add(banana);
-      this.trees.push(banana);
+      mapManager.batcher.add(banana);
+      this.trees.push(banana.position.clone());
     });
   }
 }

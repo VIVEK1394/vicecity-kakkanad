@@ -5,8 +5,11 @@
  */
 
 class HUDController {
-  constructor(mapManager) {
+  constructor(mapManager, clock) {
     this.mapManager = mapManager;
+    this.clock = clock || null; // shared TimeOfDay (drives sun, sky and lighting)
+    this.viewYaw = null; // camera yaw: the radar rotates with the view, like GTA
+    this.compassEl = document.querySelector(".compass-n");
     this.config = window.KAKKANAD_CONFIG;
 
     // DOM Elements
@@ -28,8 +31,12 @@ class HUDController {
 
   update(player, trafficManager, policeManager, missionEngine, delta) {
     // 1. Game Clock
-    this.gameMinutes += delta * 2.0; // 1 real second = 2 game minutes
-    if (this.clockEl) {
+    if (this.clock) {
+      if (this.clockEl) this.clockEl.textContent = this.clock.format();
+    } else {
+      this.gameMinutes += delta * 2.0; // 1 real second = 2 game minutes
+    }
+    if (!this.clock && this.clockEl) {
       const h = Math.floor((this.gameMinutes / 60) % 24);
       const m = Math.floor(this.gameMinutes % 60);
       const ampm = h >= 12 ? "PM" : "AM";
@@ -48,11 +55,18 @@ class HUDController {
       this.cashVal.textContent = Math.round(player.cash).toString().padStart(7, '0');
     }
 
-    // 4. Current Street / Landmark
-    const nearestRoad = this.mapManager.getNearestRoadPoint(player.position);
-    if (this.locationEl && nearestRoad) {
-      const roadObj = this.config.ROAD_NETWORK.find((r) => r.id === nearestRoad.roadId);
-      if (roadObj) this.locationEl.textContent = roadObj.name.toUpperCase();
+    // 4. Current locality and street (real Kakkanad names)
+    this.locationTimer = (this.locationTimer || 0) - delta;
+    if (this.locationEl && this.locationTimer <= 0) {
+      this.locationTimer = 0.25;
+      const nearestRoad = this.mapManager.getNearestRoadPoint(player.position);
+      const place = this.mapManager.localityAt ? this.mapManager.localityAt(player.position.x, player.position.z) : null;
+      const road = nearestRoad && nearestRoad.distance < 40 ? nearestRoad.roadName : null;
+      const text = [place && place.name, road].filter(Boolean).join(" · ").toUpperCase();
+      if (text && text !== this.locationText) {
+        this.locationText = text;
+        this.locationEl.textContent = text;
+      }
     }
 
     // 5. Radar Minimap Rendering
@@ -69,18 +83,23 @@ class HUDController {
 
     ctx.clearRect(0, 0, size, size);
 
-    // Save context for player-centric rotation
+    // View-aligned radar: camera forward is up, camera right is right.
+    const inCar = player.state === "IN_VEHICLE" && player.currentVehicle;
+    const heading = inCar ? player.currentVehicle.heading : player.heading;
+    const yaw = this.viewYaw !== null ? this.viewYaw : heading;
+    const fx = Math.sin(yaw);
+    const fz = Math.cos(yaw);
     ctx.save();
     ctx.translate(center, center);
-    ctx.rotate(-player.heading);
+    ctx.transform(-fz, -fx, fx, -fz, 0, 0); // columns: world +X -> (right . x, -forward . x), world +Z likewise
+    if (this.compassEl) {
+      // North (-Z) marker orbits the rim
+      this.compassEl.style.left = `${50 - 43 * fx}%`;
+      this.compassEl.style.top = `${50 + 43 * fz}%`;
+      this.compassEl.style.transform = "translate(-50%, -50%)";
+    }
 
-    // A. Draw Kakkanad Road Network
-    ctx.strokeStyle = "rgba(0, 240, 255, 0.45)";
-    ctx.lineWidth = 4;
-    ctx.lineCap = "round";
-
-    this.config.ROAD_NETWORK.forEach((road) => {
-      const pts = road.points;
+    const polyline = (pts) => {
       ctx.beginPath();
       for (let i = 0; i < pts.length; i++) {
         const rx = (pts[i].x - player.position.x) * scale;
@@ -89,12 +108,32 @@ class HUDController {
         else ctx.lineTo(rx, rz);
       }
       ctx.stroke();
+    };
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    // A. Rivers, then the road network (wider lines for bigger roads)
+    const geo = window.KAKKANAD_GEO;
+    if (geo) {
+      ctx.strokeStyle = "rgba(40, 120, 200, 0.55)";
+      geo.rivers.forEach((r) => {
+        ctx.lineWidth = Math.max(3, r.width * scale);
+        polyline(r.points);
+      });
+    }
+    const widths = { primary: 5, secondary: 3.6, tertiary: 2.4 };
+    this.config.ROAD_NETWORK.forEach((road) => {
+      ctx.strokeStyle = road.cls === "primary" ? "rgba(0, 240, 255, 0.62)" : "rgba(0, 240, 255, 0.4)";
+      ctx.lineWidth = widths[road.cls] || 2.4;
+      polyline(road.points);
     });
 
-    // B. Draw Landmarks
+    // B. Draw Landmarks (at their placed positions)
+    const placed = this.mapManager.landmarkPositions || {};
     this.config.KEY_LANDMARKS.forEach((lm) => {
-      const lx = (lm.x - player.position.x) * scale;
-      const lz = (lm.z - player.position.z) * scale;
+      const at = placed[lm.id] || lm;
+      const lx = (at.x - player.position.x) * scale;
+      const lz = (at.z - player.position.z) * scale;
       if (Math.hypot(lx, lz) < center - 6) {
         ctx.fillStyle = `#${lm.color.toString(16).padStart(6, '0')}`;
         ctx.fillRect(lx - 3, lz - 3, 6, 6);
@@ -103,9 +142,15 @@ class HUDController {
 
     // C. Draw Active Mission Destination Marker (Yellow Diamond)
     if (missionEngine && missionEngine.activeMission) {
-      const m = missionEngine.activeMission;
-      const mx = (m.targetPos.x - player.position.x) * scale;
-      const mz = (m.targetPos.z - player.position.z) * scale;
+      const t = missionEngine.activeTarget || missionEngine.activeMission.targetPos;
+      let mx = (t.x - player.position.x) * scale;
+      let mz = (t.z - player.position.z) * scale;
+      const md = Math.hypot(mx, mz);
+      if (md > center - 8) {
+        // off the radar: pin to the rim in its direction
+        mx *= (center - 8) / md;
+        mz *= (center - 8) / md;
+      }
 
       ctx.fillStyle = "#ffb703";
       ctx.beginPath();
@@ -143,17 +188,21 @@ class HUDController {
 
     ctx.restore();
 
-    // F. Draw Player Triangle in Center (Always faces forward)
+    // F. Player arrow in the centre, pointing where the player faces relative to the view
+    ctx.save();
+    ctx.translate(center, center);
+    ctx.rotate(-(heading - yaw));
     ctx.fillStyle = "#ff007f";
     ctx.strokeStyle = "#ffffff";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(center, center - 7);
-    ctx.lineTo(center - 5, center + 6);
-    ctx.lineTo(center + 5, center + 6);
+    ctx.moveTo(0, -7);
+    ctx.lineTo(-5, 6);
+    ctx.lineTo(5, 6);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
+    ctx.restore();
   }
 }
 
