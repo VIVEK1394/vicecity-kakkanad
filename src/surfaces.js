@@ -85,7 +85,7 @@ class SurfaceManager {
       this.asphaltMaterials[roadIndex] = new THREE.MeshStandardMaterial({
         map: this.textures.asphaltAlbedo,
         normalMap: this.textures.asphaltNormal,
-        normalScale: new THREE.Vector2(0.9, 0.9),
+        normalScale: new THREE.Vector2(0.45, 0.45),
         roughnessMap: this.textures.asphaltRough,
         roughness: 1.0,
         metalness: 0.0,
@@ -121,7 +121,8 @@ class SurfaceManager {
         g /= 9;
         const mottle = GFX.fbm(x, y, size, 4, 3, 23);
         const puddleNoise = GFX.fbm(x, y, size, 5, 3, 37);
-        const puddle = Math.min(1, Math.max(0, (puddleNoise - 0.66) / 0.05));
+        const pt = Math.min(1, Math.max(0, (puddleNoise - 0.685) / 0.06));
+        const puddle = pt * pt * (3 - 2 * pt); // soft shoreline: no bright rims in the normal map
         const speck = grain[i] > 0.965 ? 0.1 : 0;
 
         let v = 0.31 + 0.1 * (mottle - 0.5) + 0.06 * (grain[i] - 0.5) + speck;
@@ -132,7 +133,7 @@ class SurfaceManager {
         aImg.data[i * 4 + 3] = 255;
 
         height[i] = (1 - puddle) * (g + speck * 2);
-        const r = (0.74 + 0.16 * (g - 0.5) * 2) * (1 - puddle) + 0.07 * puddle;
+        const r = (0.74 + 0.16 * (g - 0.5) * 2) * (1 - puddle) + 0.1 * puddle;
         rImg.data[i * 4 + 1] = Math.max(0, Math.min(1, r)) * 255;
         rImg.data[i * 4 + 3] = 255;
       }
@@ -142,7 +143,7 @@ class SurfaceManager {
 
     this.textures.asphaltAlbedo = GFX.texture(albedo, { repeat: [1, 1] });
     this.textures.asphaltRough = GFX.texture(rough, { repeat: [1, 1] });
-    this.textures.asphaltNormal = GFX.texture(GFX.normalMapFromHeight(height, size, 3.0), { repeat: [1, 1] });
+    this.textures.asphaltNormal = GFX.texture(GFX.normalMapFromHeight(height, size, 1.6), { repeat: [1, 1] });
   }
 
   // --- 2. INTERLOCK PAVER SIDEWALK (4 m tile) -----------------------------------
@@ -376,7 +377,7 @@ class SurfaceManager {
       t.wrapS = THREE.RepeatWrapping;
       t.wrapT = THREE.RepeatWrapping;
     });
-    mat.userData.glow = { day: 0, night: 1.35 };
+    mat.userData.glow = { day: 0, night: 0.55 };
     return mat;
   }
 

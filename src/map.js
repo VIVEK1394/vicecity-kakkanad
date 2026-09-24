@@ -27,15 +27,16 @@ class KakkanadMapManager {
     this.darkMetalMat = new THREE.MeshStandardMaterial({ color: 0x2a2c30, roughness: 0.5, metalness: 0.8 });
     this.lampHousingMat = new THREE.MeshStandardMaterial({ color: 0x3a3d42, roughness: 0.4, metalness: 0.9 });
     this.lampLensMat = new THREE.MeshBasicMaterial({ color: 0xffe2b0 });
-    this.lampLensMat.userData.glow = { day: 0.35, night: 9.0 };
+    this.lampLensMat.userData.glow = { day: 0.35, night: 6.0 };
     this.lampConeMat = new THREE.MeshBasicMaterial({
       color: 0xffcf8a,
       transparent: true,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       side: THREE.DoubleSide,
+      fog: false, // fog would add its colour to an additive surface
     });
-    this.lampConeMat.userData.glow = { day: 0, night: 0.05 };
+    this.lampConeMat.userData.glow = { day: 0, night: 0.018 };
     this.lampPoolMat = new THREE.MeshBasicMaterial({
       map: S.lightPoolTexture,
       color: 0xffc98a,
@@ -45,8 +46,9 @@ class KakkanadMapManager {
       polygonOffset: true,
       polygonOffsetFactor: -4,
       polygonOffsetUnits: -80,
+      fog: false,
     });
-    this.lampPoolMat.userData.glow = { day: 0, night: 0.55 };
+    this.lampPoolMat.userData.glow = { day: 0, night: 0.14 };
     this.woodMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2b, roughness: 0.85 });
     this.tileRoofMat = new THREE.MeshStandardMaterial({ color: 0x8e3a2a, roughness: 0.78 });
     this.sheetRoofMat = new THREE.MeshStandardMaterial({ color: 0x8a2f2c, roughness: 0.5, metalness: 0.6 });
@@ -56,7 +58,7 @@ class KakkanadMapManager {
     this.initMap();
   }
 
-  neon(hex, day = 0.35, night = 4.0) {
+  neon(hex, day = 0.35, night = 1.3) {
     const key = `${hex}|${day}|${night}`;
     if (!this.neonMats.has(key)) {
       const m = new THREE.MeshBasicMaterial({ color: hex });
@@ -397,7 +399,7 @@ class KakkanadMapManager {
 
   signBoard(width, text, col, glow) {
     const signMat = new THREE.MeshBasicMaterial({ map: this.createNeonSignTexture(text, col, glow) });
-    signMat.userData.glow = { day: 1.0, night: 2.6 };
+    signMat.userData.glow = { day: 1.0, night: 1.8 };
     const d = this.darkMetalMat;
     return new THREE.Mesh(new THREE.BoxGeometry(width, 5.5, 0.6), [d, d, d, d, signMat, d]);
   }
@@ -469,7 +471,7 @@ class KakkanadMapManager {
         tower.castShadow = true;
         tower.receiveShadow = true;
         group.add(tower);
-        const sign = new THREE.Mesh(new THREE.BoxGeometry(45, 6, 2), this.neon(0x35d6ea, 0.8, 4.5));
+        const sign = new THREE.Mesh(new THREE.BoxGeometry(45, 6, 2), this.neon(0x35d6ea, 0.8, 3.0));
         sign.position.set(0, 108, 22.8);
         group.add(sign);
         const trim = new THREE.Mesh(new THREE.BoxGeometry(66, 0.6, 46), this.neon(0xff4f8b));
@@ -566,7 +568,7 @@ class KakkanadMapManager {
       const roof = new THREE.Mesh(roofGeo, this.tileRoofMat);
       roof.position.y = 3.2;
       roof.castShadow = true;
-      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), this.neon(0xffc56b, 1.0, 7.0));
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), this.neon(0xffc56b, 1.0, 5.0));
       lamp.position.set(0, 2.2, 1.7);
       const sign = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.4, 0.1), this.neon(0xff4f8b));
       sign.position.set(0, 2.7, 1.65);

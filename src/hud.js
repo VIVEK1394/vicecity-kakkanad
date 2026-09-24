@@ -5,8 +5,9 @@
  */
 
 class HUDController {
-  constructor(mapManager) {
+  constructor(mapManager, clock) {
     this.mapManager = mapManager;
+    this.clock = clock || null; // shared TimeOfDay (drives sun, sky and lighting)
     this.config = window.KAKKANAD_CONFIG;
 
     // DOM Elements
@@ -28,8 +29,12 @@ class HUDController {
 
   update(player, trafficManager, policeManager, missionEngine, delta) {
     // 1. Game Clock
-    this.gameMinutes += delta * 2.0; // 1 real second = 2 game minutes
-    if (this.clockEl) {
+    if (this.clock) {
+      if (this.clockEl) this.clockEl.textContent = this.clock.format();
+    } else {
+      this.gameMinutes += delta * 2.0; // 1 real second = 2 game minutes
+    }
+    if (!this.clock && this.clockEl) {
       const h = Math.floor((this.gameMinutes / 60) % 24);
       const m = Math.floor(this.gameMinutes % 60);
       const ampm = h >= 12 ? "PM" : "AM";

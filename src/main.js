@@ -1,7 +1,8 @@
 /**
  * GTA: VICE CITY KAKKANAD (ഗ്രാൻഡ് തെഫ്റ്റ് ഓട്ടോ: കാക്കനാട്)
  * DOMAIN 0: MASTER ORCHESTRATION & GAME ENGINE
- * Integrates Domains 1 through 8 in 60 FPS WebGL loop with dynamic camera and lifecycle state.
+ * Owns the renderer, quality tiers, sky / time of day, cheap lighting effects, the
+ * render path and the game loop that drives Domains 1 through 8.
  */
 
 class ViceCityGameEngine {
@@ -35,26 +36,16 @@ class ViceCityGameEngine {
   }
 
   init() {
-    // 1. Scene & 360-Degree Vice City Sunset Atmosphere
     this.scene = new THREE.Scene();
-    const envMap = this.createViceCityEnvironmentMap();
-    this.scene.environment = envMap;
-    this.scene.background = envMap;
-    this.scene.fog = new THREE.FogExp2(0x280b3d, 0.0004);
-    this.scene.fog.color.convertSRGBToLinear();
-
-    // 2. Camera Setup
     const aspect = window.innerWidth / window.innerHeight;
-    this.camera = new THREE.PerspectiveCamera(65, aspect, 0.3, 2800);
+    this.camera = new THREE.PerspectiveCamera(65, aspect, 0.3, 3000);
 
-    // 3. WebGL Renderer
-    // Colour pipeline: linear lighting, ACES filmic tone mapping, sRGB output.
+    // Renderer: linear lighting, ACES filmic tone mapping, sRGB output.
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputEncoding = THREE.sRGBEncoding;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.0;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.container.appendChild(this.renderer.domElement);
@@ -63,38 +54,14 @@ class ViceCityGameEngine {
     this.quality = window.gfxQuality;
     this.quality.init(this.renderer);
 
-    // 4. Authentic Vice City Dual-Tone Sunset Lighting
-    const ambLight = new THREE.AmbientLight(0xffecd2, 0.55); // Warm ambient fill
-    ambLight.color.convertSRGBToLinear();
-    this.scene.add(ambLight);
+    // Sky, sun/moon light, fog and image-based ambient light, all driven by the game clock.
+    this.sky = new window.SkySystem(this.scene, this.renderer);
+    this.timeOfDay = this.sky.time;
 
-    const hemiLight = new THREE.HemisphereLight(0xffbe53, 0x1f0d3d, 0.65); // Warm golden sky + twilight purple ground
-    hemiLight.color.convertSRGBToLinear();
-    hemiLight.groundColor.convertSRGBToLinear();
-    this.scene.add(hemiLight);
-
-    // Calibrated Directional Sunlight with Focused Real-Time Shadow Frustum
-    const sunLight = new THREE.DirectionalLight(0xff9944, 1.8);
-    sunLight.color.convertSRGBToLinear();
-    sunLight.position.set(200, 220, 150);
-    sunLight.castShadow = true;
-    sunLight.shadow.mapSize.width = 2048;
-    sunLight.shadow.mapSize.height = 2048;
-    sunLight.shadow.camera.near = 10;
-    sunLight.shadow.camera.far = 400;
-    sunLight.shadow.camera.left = -65;
-    sunLight.shadow.camera.right = 65;
-    sunLight.shadow.camera.top = 65;
-    sunLight.shadow.camera.bottom = -65;
-    sunLight.shadow.bias = -0.0006;
-    this.sunLight = sunLight;
-    this.scene.add(sunLight);
-    this.scene.add(sunLight.target);
-
-    // 7. Post-processing pipeline (HDR path; Low renders straight to the canvas)
+    // HDR post-processing pipeline (Medium/High); Low renders straight to the canvas.
     this.composer = null;
 
-    // 8. Initialize Domain Systems (Sequential Integration Gates)
+    // Domain systems
     this.mapManager = new window.KakkanadMapManager(this.scene);
     this.player = new window.PlayerController(this.scene, this.soundEngine);
     window.playerController = this.player;
@@ -108,7 +75,11 @@ class ViceCityGameEngine {
     this.missionEngine = new window.MissionEngine(this.scene, this.soundEngine);
     window.missionEngine = this.missionEngine;
 
-    this.hud = new window.HUDController(this.mapManager);
+    this.hud = new window.HUDController(this.mapManager, this.timeOfDay);
+
+    // Cheap lighting effects (all tiers)
+    this.lampStreaks = new window.LampStreaks(this.scene, this.mapManager.streetLamps);
+    this.contactShadows = new window.ContactShadows(this.scene, 80);
 
     // Everything is built: convert authored sRGB colours to linear, then apply quality.
     GFX.prepareScene(this.scene);
@@ -116,10 +87,7 @@ class ViceCityGameEngine {
     this.quality.onResolutionChange(() => this.onResize());
     this.quality.statsProvider = () => this.frameStats;
 
-    // 6. UI & Modal Listeners
     this.initUIListeners();
-
-    // 7. Window Resize Listener
     window.addEventListener("resize", () => this.onResize());
     window.addEventListener("keydown", (e) => {
       if (e.code === "KeyC") {
@@ -128,8 +96,6 @@ class ViceCityGameEngine {
     });
 
     this.ready = true;
-
-    // Start 60 FPS Loop
     if (!this.testMode) requestAnimationFrame((t) => this.animate(t));
   }
 
@@ -170,22 +136,7 @@ class ViceCityGameEngine {
     GFX.anisotropy = Math.min(tier.anisotropy, this.renderer.capabilities.getMaxAnisotropy());
     window.vehicleModelFactory.setClearcoat(tier.clearcoat);
     this.renderer.shadowMap.type = tier.shadowSoft ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
-    if (this.sunLight) {
-      const shadow = this.sunLight.shadow;
-      if (shadow.mapSize.x !== tier.shadowMapSize) {
-        shadow.mapSize.set(tier.shadowMapSize, tier.shadowMapSize);
-        if (shadow.map) {
-          shadow.map.dispose();
-          shadow.map = null;
-        }
-      }
-      const e = tier.shadowExtent;
-      shadow.camera.left = -e;
-      shadow.camera.right = e;
-      shadow.camera.top = e;
-      shadow.camera.bottom = -e;
-      shadow.camera.updateProjectionMatrix();
-    }
+    this.sky.applyQuality(tier);
     this.onResize();
     // Tone mapping / shadow type are program parameters r128 doesn't track: recompile.
     GFX.invalidateAll(this.scene);
@@ -217,42 +168,34 @@ class ViceCityGameEngine {
     GFX.uniforms.gfxTime.value += delta;
     this.mapManager.update(delta);
 
-    // 1. Update Player Controller
     this.player.update(delta, this.mapManager, this.trafficManager, this.policeManager);
-
-    // 2. Update Ambient Traffic & Pedestrians
     this.trafficManager.update(delta, this.player);
-
-    // 3. Update Kerala Police AI & Wanted Stars
     this.policeManager.update(delta, this.player, this.mapManager);
-
-    // 4. Update Mission Storyline
     this.missionEngine.update(delta, this.player);
-
-    // 5. Update Vice City HUD & Radar Minimap
     this.hud.update(this.player, this.trafficManager, this.policeManager, this.missionEngine, delta);
 
-    // 6. Update Directional Shadow Light to track Player tightly for razor-sharp real-time shadows
-    if (this.player && this.sunLight) {
-      const pPos = this.player.position;
-      this.sunLight.position.set(pPos.x + 80, 140, pPos.z + 60);
-      this.sunLight.target.position.copy(pPos);
-      this.sunLight.target.updateMatrixWorld();
-    }
-
-    // 7. Update Dynamic Camera
     this.updateCamera(delta);
     this.cullDynamicObjects();
 
-    if (!render) return;
+    // Lighting follows the final camera for this frame.
+    this.sky.update(delta, this.player, this.camera);
+    this.lampStreaks.update(this.sky.night, GFX.uniforms.gfxWetness.value, this.tier && this.tier.ssr ? 0.5 : 1);
+    this.updateContactShadows();
 
-    // 8. Render 3D Scene (via RenderWare Post-Processing Composer if active)
-    if (this.composer) {
-      this.composer.render(delta);
+    if (!render) return;
+    this.renderFrame(delta);
+  }
+
+  renderFrame(delta) {
+    if (this.composer && this.tier.post) {
+      this.composer.render(delta, this.sky.exposure);
+      this.frameStats = this.composer.stats;
     } else {
+      this.renderer.toneMappingExposure = this.sky.exposure;
       this.renderer.render(this.scene, this.camera);
       this.frameStats.calls = this.renderer.info.render.calls;
       this.frameStats.triangles = this.renderer.info.render.triangles;
+      this.frameStats.path = "direct";
     }
   }
 
@@ -274,41 +217,31 @@ class ViceCityGameEngine {
     });
   }
 
-  createViceCityEnvironmentMap() {
-    const canvas = document.createElement("canvas");
-    canvas.width = 1024;
-    canvas.height = 512;
-    const ctx = canvas.getContext("2d");
+  // Soft contact shadows (ambient occlusion) under everything that moves.
+  updateContactShadows() {
+    const cs = this.contactShadows;
+    const cam = this.camera.position;
+    cs.begin();
+    const addVehicle = (v) => {
+      if (!v.mesh.visible || v.mesh.position.distanceToSquared(cam) > 120 * 120) return;
+      const a = v.archetype;
+      cs.add(v.position, v.heading, a.width * 1.3, a.length * 1.12);
+    };
+    this.trafficManager.vehicles.forEach(addVehicle);
+    this.policeManager.policeUnits.forEach(addVehicle);
+    if (this.player.starterVehicle) addVehicle(this.player.starterVehicle);
 
-    // 1980s Vice City Sky Gradient (Equirectangular: y=0 Zenith, y=256 Horizon, y=512 Nadir)
-    const grad = ctx.createLinearGradient(0, 0, 0, 512);
-    grad.addColorStop(0.00, "#080114"); // Zenith: Deep cosmic midnight violet
-    grad.addColorStop(0.20, "#240046"); // High sky: Rich indigo purple
-    grad.addColorStop(0.36, "#7209b7"); // Mid sky: Electric magenta / violet
-    grad.addColorStop(0.44, "#f72585"); // Low sky: Iconic Vice City neon hot pink
-    grad.addColorStop(0.48, "#ff7b00"); // Near horizon: Sunset orange
-    grad.addColorStop(0.50, "#ffb703"); // Horizon line (y=256): Warm golden sunset glow
-    grad.addColorStop(0.53, "#3c096c"); // Just below horizon: Atmospheric haze
-    grad.addColorStop(0.65, "#10002b"); // Ground reflection
-    grad.addColorStop(1.00, "#050010"); // Nadir: Deep ground plane
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 1024, 512);
-
-    // Glowing Golden Sun on the Horizon (elevation ~ 3 degrees above horizon)
-    const sunGrad = ctx.createRadialGradient(720, 245, 5, 720, 245, 65);
-    sunGrad.addColorStop(0.0, "rgba(255, 255, 255, 1.0)");
-    sunGrad.addColorStop(0.3, "rgba(255, 225, 120, 0.9)");
-    sunGrad.addColorStop(0.7, "rgba(255, 110, 60, 0.4)");
-    sunGrad.addColorStop(1.0, "rgba(255, 50, 100, 0.0)");
-    ctx.fillStyle = sunGrad;
-    ctx.beginPath();
-    ctx.arc(720, 245, 65, 0, Math.PI * 2);
-    ctx.fill();
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.mapping = THREE.EquirectangularReflectionMapping;
-    texture.encoding = THREE.sRGBEncoding;
-    return texture;
+    if (this.player.state === "ON_FOOT") {
+      const lift = Math.min(1, this.player.position.y * 0.6);
+      const size = 0.95 * (1 - lift * 0.4);
+      cs.add(this.player.position, this.player.heading, size, size);
+    }
+    this.trafficManager.pedestrians.forEach((ped) => {
+      if (!ped.group.visible) return;
+      if (ped.isKnockedOut) cs.add(ped.position, ped.group.rotation.y, 0.9, 1.9);
+      else cs.add(ped.position, ped.group.rotation.y, 0.85, 0.85);
+    });
+    cs.end();
   }
 
   updateCamera(delta) {
