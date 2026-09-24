@@ -136,8 +136,14 @@ class ViceCityGameEngine {
     GFX.anisotropy = Math.min(tier.anisotropy, this.renderer.capabilities.getMaxAnisotropy());
     window.vehicleModelFactory.setClearcoat(tier.clearcoat);
     this.renderer.shadowMap.type = tier.shadowSoft ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    // HDR path: the scene stays linear and the composite tone-maps; Low tone-maps directly.
+    this.renderer.toneMapping = tier.post ? THREE.NoToneMapping : THREE.ACESFilmicToneMapping;
     this.sky.applyQuality(tier);
     this.onResize();
+    if (tier.post) {
+      if (!this.composer) this.composer = new window.PostProcessingComposer(this.renderer, this.scene, this.camera);
+      this.composer.setQuality(tier);
+    }
     // Tone mapping / shadow type are program parameters r128 doesn't track: recompile.
     GFX.invalidateAll(this.scene);
   }
@@ -148,7 +154,7 @@ class ViceCityGameEngine {
     this.camera.updateProjectionMatrix();
     this.renderer.setPixelRatio(this.quality ? this.quality.pixelRatio() : Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    if (this.composer) {
+    if (this.composer && this.tier && this.tier.post) {
       this.composer.setSize(window.innerWidth, window.innerHeight);
     }
   }
@@ -188,7 +194,8 @@ class ViceCityGameEngine {
 
   renderFrame(delta) {
     if (this.composer && this.tier.post) {
-      this.composer.render(delta, this.sky.exposure);
+      this.composer.focusDistance = this.camera.position.distanceTo(this.player.position);
+      this.composer.render(delta, this.sky.grade);
       this.frameStats = this.composer.stats;
     } else {
       this.renderer.toneMappingExposure = this.sky.exposure;

@@ -269,6 +269,7 @@ class SkySystem {
     this.skyAverage = new THREE.Color();
     this.night = 0; // 0 day .. 1 night (lights on)
     this.exposure = 1;
+    this.grade = { exposure: 1, whiteBalance: new THREE.Vector3(1, 1, 1), saturation: 1.05, contrast: 1.05, bloom: 0.1 };
     this.shadowExtent = 70;
 
     // Shared uniforms between the visible dome and the environment-map dome.
@@ -403,6 +404,15 @@ class SkySystem {
     const lum = (c) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
     const sceneLum = sunI * Math.max(0, s) * lum(this.sunColor) + lum(this.skyAverage) + moonI * 0.5 + 0.004;
     this.exposure = THREE.MathUtils.clamp(Math.pow(1.45 / sceneLum, 0.42), 1.0, 3.2);
+
+    // Colour grade for the HDR composite: neutral by day, slightly warm at golden hour,
+    // cooler and less saturated at night.
+    const golden = THREE.MathUtils.smoothstep(s, -0.02, 0.08) * (1 - THREE.MathUtils.smoothstep(s, 0.15, 0.4));
+    this.grade.exposure = this.exposure;
+    this.grade.whiteBalance.set(1 + 0.05 * golden - 0.05 * skyNight, 1 - 0.01 * skyNight, 1 - 0.07 * golden + 0.07 * skyNight);
+    this.grade.saturation = 1.06 - 0.12 * skyNight;
+    this.grade.contrast = 1.05;
+    this.grade.bloom = 0.1 + 0.12 * this.night;
 
     // Night glow for lamps, neon, windows, head/tail lights.
     GFX.glow.update(this.night);

@@ -10,6 +10,16 @@
  * Colours are authored in sRGB; GFX.prepareScene converts them to linear.
  */
 
+// Asphalt writes its wetness (puddles = low roughness) to alpha; the HDR pipeline uses it
+// as the screen-space-reflection mask. Opaque output alpha is otherwise always 1.
+const WET_ASPHALT_ON_BEFORE_COMPILE = function (shader) {
+  GFX.injectUniforms(shader);
+  shader.fragmentShader = shader.fragmentShader.replace(
+    "#include <dithering_fragment>",
+    "#include <dithering_fragment>\n\tgl_FragColor.a = 1.0 - clamp( ( 0.45 - roughnessFactor ) / 0.3, 0.0, 1.0 );"
+  );
+};
+
 class SurfaceManager {
   constructor() {
     this.textures = {};
@@ -93,7 +103,7 @@ class SurfaceManager {
         polygonOffsetFactor: -1,
         polygonOffsetUnits: -4 * (roadIndex + 1),
       });
-      this.asphaltMaterials[roadIndex].userData.wetSurface = true;
+      this.asphaltMaterials[roadIndex].onBeforeCompile = WET_ASPHALT_ON_BEFORE_COMPILE;
     }
     return this.asphaltMaterials[roadIndex];
   }
