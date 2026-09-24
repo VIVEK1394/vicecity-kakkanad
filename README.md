@@ -70,7 +70,8 @@ Built with Three.js (r128, vendored) and the native Web Audio API: **zero npm pa
   - Mouse orbit with auto-recentre and subtle shake.
   - Hood/first-person and cinematic modes.
 - **On foot**:
-  - Camera-relative movement with acceleration, turn inertia and sprint.
+  - Classic GTA controls: `A`/`D` turn the view and the player turns with it (stepping round on the spot when standing still), `W`/`S` run where the camera looks. The camera settles in behind you when you run; the mouse is optional.
+  - Acceleration, turn inertia and sprint.
   - Procedural walk/run animation on a jointed rig: knees, elbows, lean, bob, banking into turns.
   - Punch wind-up and strike, jump and landing.
 - **Vehicles**:
@@ -101,8 +102,9 @@ Built with Three.js (r128, vendored) and the native Web Audio API: **zero npm pa
 
 | Action | Keybinding |
 | :--- | :--- |
-| **Move / Steer** | `W`, `A`, `S`, `D` or `Arrow Keys` (on foot, relative to the camera) |
-| **Look around** | Mouse: click the game to capture the mouse (`Esc` releases), or hold the right button and drag |
+| **Run forwards / back** | `W` / `S` or `↑` / `↓` (accelerate / brake and reverse when driving) |
+| **Turn** | `A` / `D` or `←` / `→`: the player and the view turn together, as in the classic GTA games, so you can play with the keyboard alone (steer when driving) |
+| **Look around (optional)** | Mouse: click the game to capture the mouse (`Esc` releases), or hold the right button and drag |
 | **Punch** | `Left-Click` or `Enter` / `J` |
 | **Enter / Carjack / Exit Vehicle** | `F` or `E` |
 | **Sprint** | `Shift` (hold while moving on foot) |

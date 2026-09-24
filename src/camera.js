@@ -40,7 +40,8 @@ class CameraRig {
     this.fov = 60;
     this.pivot = new THREE.Vector3();
     this.lookAt = new THREE.Vector3();
-    this.vel = { yaw: { v: 0 }, pitch: { v: 0 }, dist: { v: 0 }, fov: { v: 0 }, px: { v: 0 }, py: { v: 0 }, pz: { v: 0 }, coll: { v: 0 } };
+    this.vel = { yaw: { v: 0 }, pitch: { v: 0 }, dist: { v: 0 }, fov: { v: 0 }, px: { v: 0 }, py: { v: 0 }, pz: { v: 0 }, coll: { v: 0 }, turn: { v: 0 } };
+    this.turnSpeed = 0; // on foot: A/D turn the view (classic GTA), rad/s
     this.collisionDistance = 100;
 
     this.mouseYaw = 0; // pending mouse deltas
@@ -245,30 +246,35 @@ class CameraRig {
       );
       if (speedRatio > 0.65) this.shake = Math.max(this.shake, (speedRatio - 0.65) * 0.35);
     } else {
-      // on foot: mouse orbit; ease in behind the player while running forward
-      this.yaw = wrapAngle(this.yaw + this.mouseYaw);
+      // on foot, classic GTA: A/D swing the view round and the player turns with it
+      // (keyboard-only play); the mouse orbits freely and the view recentres behind
+      // the player when running.
+      const vel = player.velocity;
+      const speed = Math.hypot(vel.x, vel.z);
+      const keys = player.keys || {};
+      const turnKey = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
+      const maxTurn = speed > 7 ? 1.9 : 2.5;
+      this.turnSpeed = springDamp(this.turnSpeed, turnKey * maxTurn, this.vel.turn, 0.07, dt);
+      this.yaw = wrapAngle(this.yaw + this.mouseYaw - this.turnSpeed * dt);
       this.pitch = THREE.MathUtils.clamp(this.pitch + this.mousePitch, -0.35, 1.1);
       this.lookOffset = 0;
       this.pitchOffset = 0;
-      const vel = player.velocity;
-      const speed = Math.hypot(vel.x, vel.z);
       targetYaw = cut ? player.heading : this.yaw; // after a cut, start behind the player
       targetPitch = this.pitch;
       yawSmooth = 0.04;
-      if (!mouseActive && speed > 1.5) {
-        // Running mostly forward: swing round behind the player (never while strafing,
-        // which would make the player spiral).
+      if (!mouseActive && turnKey === 0 && speed > 1.5) {
+        // Running forwards (not back towards the camera): settle in behind the player.
         const moveYaw = Math.atan2(vel.x, vel.z);
-        if (Math.cos(wrapAngle(moveYaw - this.yaw)) > 0.3) {
+        if (Math.cos(wrapAngle(moveYaw - this.yaw)) > 0.2) {
           targetYaw = moveYaw;
-          yawSmooth = 1.1;
+          yawSmooth = 0.9;
         }
-        targetPitch = this.pitch + (0.2 - this.pitch) * Math.min(1, dt * 1.5);
       }
+      if (!mouseActive) targetPitch = this.pitch + (0.26 - this.pitch) * Math.min(1, dt * 1.5);
       const sprinting = speed > 7;
-      targetDist = 4.3 + (sprinting ? 0.5 : 0);
-      targetFov = sprinting ? 63 : 58;
-      const right = 0.35; // slight over-the-shoulder offset
+      targetDist = 4.9 + (sprinting ? 0.5 : 0);
+      targetFov = sprinting ? 62 : 57;
+      const right = 0.12; // player nearly centred, as in the classic games
       pivotTarget.set(
         player.position.x - Math.cos(this.yaw) * right,
         player.position.y + 1.55,

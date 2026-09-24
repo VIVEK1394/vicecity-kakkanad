@@ -194,7 +194,9 @@ class PlayerController {
       }
     }
     if (this.locomotion.landImpact > 0) this.gait.land(this.locomotion.landImpact);
-    this.gait.update(delta, speed, this.locomotion.accelForward, this.locomotion.turnRate, this.isGrounded);
+    // turning on the spot shuffles the feet
+    const animSpeed = this.locomotion.turningInPlace ? Math.max(speed, 1.1) : speed;
+    this.gait.update(delta, animSpeed, this.locomotion.accelForward, this.locomotion.turnRate, this.isGrounded);
 
     // Sync Character Mesh
     this.characterMesh.position.copy(this.position);

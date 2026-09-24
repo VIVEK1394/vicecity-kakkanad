@@ -1,8 +1,10 @@
 /**
  * GTA: VICE CITY KAKKANAD (ഗ്രാൻഡ് തെഫ്റ്റ് ഓട്ടോ: കാക്കനാട്)
  * ON-FOOT LOCOMOTION & PROCEDURAL ANIMATION
- * - OnFootController: camera-relative input, acceleration / deceleration, turn inertia
- *   (turn rate drops while sprinting), reduced air control, jump and landing impact.
+ * - OnFootController: classic GTA controls. W/S run forwards/back relative to the view,
+ *   A/D turn the view (CameraRig) and the player turns with it (in place when standing,
+ *   stepping round). Acceleration / deceleration, turn inertia (slower while sprinting),
+ *   reduced air control, jump and landing impact.
  * - ProceduralGait: jointed-rig animation driven by distance travelled (feet don't
  *   slide); walk and run poses blend by speed; knee and elbow bend, hip bob and sway,
  *   forward lean with speed/acceleration, banking into turns, idle breathing, airborne
@@ -39,6 +41,7 @@ class OnFootController {
     this.turnRate = 0; // rad/s, for banking
     this.accelForward = 0; // m/s^2 along facing, for leaning
     this.landImpact = 0; // set on the frame the player lands
+    this.turningInPlace = false; // A/D while standing: the player steps round with the view
     this.jumpHeld = false;
     this._wish = new THREE.Vector3();
   }
@@ -46,7 +49,8 @@ class OnFootController {
   update(dt, keys, cameraYaw) {
     const p = this.player;
     const fwd = (keys.up ? 1 : 0) - (keys.down ? 1 : 0);
-    const side = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
+    const turnKey = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
+    const side = 0; // A/D turn the view (see CameraRig), they don't strafe
     const wish = this._wish.set(
       Math.sin(cameraYaw) * fwd - Math.cos(cameraYaw) * side,
       0,
@@ -72,10 +76,12 @@ class OnFootController {
     p.velocity.z = vz0 + dvz;
     const speed = Math.hypot(p.velocity.x, p.velocity.z);
 
-    // Facing turns towards the input direction with limited rate (turn inertia).
+    // Facing turns towards the input direction with limited rate (turn inertia). Turning
+    // on the spot follows the view, so the player always faces where the camera looks.
     const prevHeading = p.heading;
-    if (hasInput || speed > 0.4) {
-      const desired = hasInput ? Math.atan2(wish.x, wish.z) : Math.atan2(p.velocity.x, p.velocity.z);
+    this.turningInPlace = !hasInput && turnKey !== 0 && speed < 0.4;
+    if (hasInput || speed > 0.4 || this.turningInPlace) {
+      const desired = hasInput ? Math.atan2(wish.x, wish.z) : this.turningInPlace ? cameraYaw : Math.atan2(p.velocity.x, p.velocity.z);
       const sprintK = gaitSmooth(LOCOMOTION.jogSpeed, LOCOMOTION.sprintSpeed, speed);
       const maxTurn = (LOCOMOTION.turnRate + (LOCOMOTION.sprintTurnRate - LOCOMOTION.turnRate) * sprintK) * dt;
       const diff = wrapPi(desired - p.heading);
